@@ -60,7 +60,7 @@ class PasswordResetToken(BaseModel):
 class WebLink(BaseModel):
     __tablename__ = 'weblink'
        
-    weblink = Column(String(255), nullable=True)
+    weblink = Column(Text, nullable=True)
     title = Column(String(255), nullable=True)
     resumo = Column(Text, nullable=True)
     usuario_id = Column(PG_UUID(as_uuid=True), ForeignKey('usuario.id'), nullable=False, index=True) 

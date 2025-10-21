@@ -39,10 +39,6 @@ def _calculate_confidence(distances: List[float]) -> float:
     avg_distance = sum(distances) / len(distances)
     confidence = 1.0 / (1.0 + avg_distance)
     
-    logger.info(f"[CONFIDENCE DEBUG] Distances: {distances}")
-    logger.info(f"[CONFIDENCE DEBUG] Avg distance: {avg_distance:.4f}")
-    logger.info(f"[CONFIDENCE DEBUG] Calculated confidence: {confidence:.4f}")
-    
     # Normaliza entre 0 e 1
     return min(max(confidence, 0.0), 1.0)
 
@@ -65,17 +61,9 @@ def retrieve_relevant_chunks(
     Returns:
         Lista de tuplas (title, content, distance)
     """
-    # Converte embedding para string PostgreSQL array format: '[x,y,z,...]'
-    # Remove espaços para formato compacto aceito pelo pgvector
-    embedding_str = str(query_embedding).replace(' ', '')
-    
-    logger.info(f"[QUERY DEBUG] Embedding string (primeiros 100 chars): {embedding_str[:100]}")
-    logger.info(f"[QUERY DEBUG] Embedding length: {len(query_embedding)}")
-    logger.info(f"[QUERY DEBUG] Context: {context}")
-    
-    # Query usando format string para o embedding (não é injeção SQL pois é array numérico)
-    sql = text(f"""
-        SELECT title, content, embedding <-> '{embedding_str}'::vector AS distance
+    # Query SQL com busca vetorial filtrada por context
+    sql = text("""
+        SELECT title, content, embedding <-> :query_embedding AS distance
         FROM conhecimento
         WHERE context = :context
         ORDER BY distance
@@ -85,19 +73,13 @@ def retrieve_relevant_chunks(
     result = db.execute(
         sql,
         {
+            "query_embedding": str(query_embedding),
             "context": context,
             "top_k": top_k
         }
     ).fetchall()
     
-    # Log para debug das distâncias
-    chunks = [(row[0], row[1], row[2]) for row in result]
-    if chunks:
-        distances = [dist for _, _, dist in chunks]
-        logger.info(f"Distâncias retornadas: {distances}")
-        logger.info(f"Distância média: {sum(distances) / len(distances):.4f}")
-    
-    return chunks
+    return [(row[0], row[1], row[2]) for row in result]
 
 
 def generate_rag_answer(
