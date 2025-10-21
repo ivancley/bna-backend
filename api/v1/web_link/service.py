@@ -35,11 +35,11 @@ class WebLinkService(BaseService[WebLink, WebLinkCreate, WebLinkUpdate, WebLinkG
             generic_schema=WebLinkGeneric
         )
         
-        # Define Campos de busca
+        # Define Campos de busca (apenas campos de texto)
         self.searchable_fields = [
             "weblink",
             "resumo",
-            "usuario_id",
+            "title",
         ]
 
     def create(self, db: Session, data: WebLinkCreate) -> WebLink:

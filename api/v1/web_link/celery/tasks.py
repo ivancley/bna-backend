@@ -9,18 +9,17 @@ from sqlalchemy.orm import Session
 
 from api.utils.celery_app import celery_app
 from api.utils.db_services import get_db
-from api.v1._shared.schemas import WebLinkUpdate
+from api.v1._database.models import WebLink
 from api.v1.web_link.ia.summarize import generate_summary
 from api.v1.web_link.rag.ingest import ingest_page_content
-from api.v1.web_link.scraping.scraping import url_to_json
-from api.v1.web_link.service import WebLinkService 
+from api.v1.web_link.scraping.scraping import url_to_json 
 
 
 logger = logging.getLogger(__name__)
 OPENAI_API_KEY = config("OPENAI_API_KEY")
 
 @celery_app.task(
-    name="api.v1.web_link.tasks.scrape_url",
+    name="api.v1.web_link.celery.tasks.scrape_url_task",
     bind=True,
     max_retries=3,
     default_retry_delay=60  
@@ -73,12 +72,12 @@ def scrape_url_task(self, weblink_id: str, url: str) -> Optional[dict]:
         print(summary)
         print("="*80 + "\n")
         
-        # 3) Atualiza o WebLink no banco com resumo
-        update_data = WebLinkUpdate(
-            title=page_content.title,
-            resumo=summary
-        )
-        WebLinkService().update(db=db, id=weblink_id, data=update_data)
+        # 3) Atualiza o WebLink no banco com resumo e título
+        db.query(WebLink).filter(WebLink.id == UUID(weblink_id)).update({
+            "title": page_content.title,
+            "resumo": summary
+        })
+        db.commit()
         
         # 4) Ingere no pgvector para RAG
         ingest_result = ingest_page_content(

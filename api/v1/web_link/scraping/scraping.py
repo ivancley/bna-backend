@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -13,8 +14,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; ContentFetcher/1.0; +https://example.com/bot)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0"
 }
+
+# Alguns sites conhecidos por bloqueio agressivo
+BLOCKED_DOMAINS = [
+    "boticario.com.br",
+    "amazon.com",
+    "mercadolivre.com.br"
+]
 
 
 def _clean_text(text: str) -> str:
@@ -79,13 +98,19 @@ def _domain(url: str) -> str:
     except Exception:
         return ""
 
-def url_to_json(url: str, timeout: float = 15.0) -> PageContent:
+def _is_blocked_domain(url: str) -> bool:
+    """Verifica se o domínio está na lista de bloqueados."""
+    domain = _domain(url)
+    return any(blocked in domain for blocked in BLOCKED_DOMAINS)
+
+def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 2) -> PageContent:
     """
     Faz o download de uma URL e retorna um objeto PageContent com o conteúdo extraído.
     
     Args:
         url: URL da página a ser extraída
-        timeout: Tempo máximo de espera em segundos
+        timeout: Tempo máximo de espera em segundos (padrão: 30s)
+        max_retries: Número máximo de tentativas em caso de timeout (padrão: 2)
         
     Returns:
         PageContent: Objeto com título, descrição, conteúdo e metadados da página
@@ -94,7 +119,56 @@ def url_to_json(url: str, timeout: float = 15.0) -> PageContent:
         requests.RequestException: Se houver erro na requisição HTTP
         ValueError: Se o conteúdo não for HTML válido
     """
-    resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout, allow_redirects=True)
+    # Detecta se é um domínio com bloqueio conhecido
+    is_blocked = _is_blocked_domain(url)
+    
+    # Usa sessão para domínios bloqueados (mantém cookies)
+    session = requests.Session() if is_blocked else requests
+    
+    for attempt in range(max_retries + 1):
+        try:
+            # Adiciona delay para domínios bloqueados
+            if is_blocked and attempt > 0:
+                delay = 2 + attempt  # 2s, 3s, 4s...
+                print(f"[BLOCKED DOMAIN] Aguardando {delay}s antes de tentar novamente...")
+                time.sleep(delay)
+            
+            resp = session.get(
+                url, 
+                headers=DEFAULT_HEADERS, 
+                timeout=timeout, 
+                allow_redirects=True,
+                verify=True  # Verifica certificados SSL
+            )
+            resp.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
+            break
+        except requests.HTTPError as e:
+            # Erro 403 Forbidden - site está bloqueando
+            if e.response.status_code == 403:
+                if is_blocked:
+                    print(f"[BLOCKED] Site {_domain(url)} está bloqueando scraping (403 Forbidden)")
+                raise ValueError(
+                    f"Site está bloqueando o acesso (403 Forbidden). "
+                    f"Este site ({_domain(url)}) possui proteção anti-bot e não pode ser acessado automaticamente."
+                )
+            raise  # Outros erros HTTP
+        except requests.Timeout as e:
+            if attempt < max_retries:
+                # Aguarda antes de tentar novamente (backoff exponencial)
+                wait_time = 2 ** attempt  # 1s, 2s, 4s...
+                print(f"[RETRY] Tentativa {attempt + 1}/{max_retries + 1} falhou por timeout. Aguardando {wait_time}s antes de tentar novamente...")
+                time.sleep(wait_time)
+                # Aumenta timeout progressivamente
+                timeout = timeout * 1.5
+                continue
+            raise requests.Timeout(f"Timeout após {max_retries + 1} tentativas: {e}")
+        except requests.RequestException as e:
+            raise  # Outros erros não tentam novamente
+    
+    # Fecha sessão se foi criada
+    if is_blocked and hasattr(session, 'close'):
+        session.close()
+    
     content_type = resp.headers.get("Content-Type", "").lower()
     
     # Verifica se é HTML

@@ -11,7 +11,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         'api.utils.tasks.email_tasks',
-        'api.v1.web_link.tasks',
+        'api.v1.web_link.celery.tasks',
     ]
 )
 
@@ -35,7 +35,8 @@ celery_app.conf.update(
     task_routes={
         'api.utils.tasks.email_tasks.*': {'queue': 'email'},
         'api.utils.tasks.ia_tasks.*': {'queue': 'ia'},
-        'api.v1.web_link.tasks.*': {'queue': 'scraping'},
+        'api.v1.web_link.celery.tasks.*': {'queue': 'scraping'},
+        'api.v1.web_link.celery.tasks.scrape_url_task': {'queue': 'scraping'},  # Rota específica
     },
     
     # Rate limiting
