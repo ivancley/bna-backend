@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import random
 import re
 import sys
 import time
@@ -7,38 +8,100 @@ from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
-import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 from api.v1._shared.custom_schemas import HeadingsData, OpenGraphData, PageContent
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Cache-Control": "max-age=0"
-}
-
-# Alguns sites conhecidos por bloqueio agressivo
-BLOCKED_DOMAINS = [
-    "boticario.com.br",
-    "amazon.com",
-    "mercadolivre.com.br"
+# User Agents variados para anti-detecção
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15"
 ]
 
 
+def _get_random_user_agent() -> str:
+    """Retorna um User-Agent aleatório para evitar detecção."""
+    return random.choice(USER_AGENTS)
+
+
+def _create_chrome_driver() -> webdriver.Chrome:
+    """
+    Cria e configura uma instância do Chrome WebDriver com opções anti-detecção.
+    
+    Returns:
+        webdriver.Chrome: Instância configurada do Chrome WebDriver
+    """
+    chrome_options = Options()
+    
+    # Modo headless (sem interface gráfica)
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    
+    # Configurações de window para parecer mais natural
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--start-maximized")
+    
+    # User Agent aleatório
+    chrome_options.add_argument(f"user-agent={_get_random_user_agent()}")
+    
+    # Configurações anti-detecção
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option("useAutomationExtension", False)
+    
+    # Configurações de performance
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--disable-notifications")
+    
+    # Preferências adicionais
+    prefs = {
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_settings.popups": 0,
+        "profile.default_content_setting_values.media_stream_mic": 2,
+        "profile.default_content_setting_values.media_stream_camera": 2,
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+    
+    # Cria o driver
+    driver = webdriver.Chrome(options=chrome_options)
+    
+    # Script para mascarar detecção de Selenium
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": """
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pt-BR', 'pt', 'en-US', 'en']
+            });
+        """
+    })
+    
+    return driver
+
+
 def _clean_text(text: str) -> str:
-    # Normaliza espaços
+    """Normaliza espaços em branco."""
     return re.sub(r"\s+", " ", text).strip()
+
 
 def _extract_meta(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
     def meta(name: str) -> Optional[str]:
@@ -93,114 +156,143 @@ def _extract_main_text(soup: BeautifulSoup, min_len: int = 40) -> str:
     return joined[:20000]  # ~20KB de texto
 
 def _domain(url: str) -> str:
+    """Extrai o domínio de uma URL."""
     try:
         return urlparse(url).netloc
     except Exception:
         return ""
 
-def _is_blocked_domain(url: str) -> bool:
-    """Verifica se o domínio está na lista de bloqueados."""
-    domain = _domain(url)
-    return any(blocked in domain for blocked in BLOCKED_DOMAINS)
 
 def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 2) -> PageContent:
     """
-    Faz o download de uma URL e retorna um objeto PageContent com o conteúdo extraído.
+    Faz o scraping de uma URL usando Selenium e retorna um objeto PageContent com o conteúdo extraído.
+    
+    Estratégias anti-detecção implementadas:
+    - User-Agent aleatório
+    - Delays aleatórios entre ações
+    - Mascaramento de propriedades do Selenium
+    - Espera inteligente por elementos da página
     
     Args:
         url: URL da página a ser extraída
         timeout: Tempo máximo de espera em segundos (padrão: 30s)
-        max_retries: Número máximo de tentativas em caso de timeout (padrão: 2)
+        max_retries: Número máximo de tentativas em caso de falha (padrão: 2)
         
     Returns:
         PageContent: Objeto com título, descrição, conteúdo e metadados da página
         
     Raises:
-        requests.RequestException: Se houver erro na requisição HTTP
+        TimeoutException: Se a página não carregar dentro do timeout
+        WebDriverException: Se houver erro no WebDriver
         ValueError: Se o conteúdo não for HTML válido
     """
-    # Detecta se é um domínio com bloqueio conhecido
-    is_blocked = _is_blocked_domain(url)
-    
-    # Usa sessão para domínios bloqueados (mantém cookies)
-    session = requests.Session() if is_blocked else requests
+    driver = None
+    last_exception = None
     
     for attempt in range(max_retries + 1):
         try:
-            # Adiciona delay para domínios bloqueados
-            if is_blocked and attempt > 0:
-                delay = 2 + attempt  # 2s, 3s, 4s...
-                print(f"[BLOCKED DOMAIN] Aguardando {delay}s antes de tentar novamente...")
+            print(f"[SELENIUM] Tentativa {attempt + 1}/{max_retries + 1} - Acessando: {url}")
+            
+            # Delay aleatório entre tentativas (anti-detecção)
+            if attempt > 0:
+                delay = random.uniform(2, 5)
+                print(f"[SELENIUM] Aguardando {delay:.2f}s antes de tentar novamente...")
                 time.sleep(delay)
             
-            resp = session.get(
-                url, 
-                headers=DEFAULT_HEADERS, 
-                timeout=timeout, 
-                allow_redirects=True,
-                verify=True  # Verifica certificados SSL
+            # Cria o driver Chrome
+            driver = _create_chrome_driver()
+            driver.set_page_load_timeout(timeout)
+            
+            # Acessa a URL
+            driver.get(url)
+            
+            # Delay aleatório para simular comportamento humano
+            time.sleep(random.uniform(1, 3))
+            
+            # Aguarda até que o body esteja presente (indica que a página carregou)
+            wait = WebDriverWait(driver, timeout)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+            
+            # Aguarda um pouco mais para JavaScript dinâmico carregar
+            time.sleep(random.uniform(1, 2))
+            
+            # Scroll suave para simular comportamento humano e carregar lazy load
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
+            time.sleep(0.5)
+            driver.execute_script("window.scrollTo(0, 0);")
+            
+            # Obtém o HTML renderizado
+            page_source = driver.page_source
+            
+            # Verifica se é HTML
+            if not ("<html" in page_source.lower() or "<body" in page_source.lower()):
+                raise ValueError(f"Conteúdo não é HTML válido")
+            
+            print(f"[SELENIUM] Página carregada com sucesso: {url}")
+            
+            # Extrai dados da página HTML com BeautifulSoup
+            soup = BeautifulSoup(page_source, "lxml")
+            meta = _extract_meta(soup)
+            headings_dict = _extract_headings(soup)
+            main_text = _extract_main_text(soup)
+            
+            # Cria objetos dos schemas
+            headings_data = HeadingsData(
+                h1=headings_dict.get("h1", []),
+                h2=headings_dict.get("h2", []),
+                h3=headings_dict.get("h3", [])
             )
-            resp.raise_for_status()  # Levanta exceção para códigos 4xx/5xx
-            break
-        except requests.HTTPError as e:
-            # Erro 403 Forbidden - site está bloqueando
-            if e.response.status_code == 403:
-                if is_blocked:
-                    print(f"[BLOCKED] Site {_domain(url)} está bloqueando scraping (403 Forbidden)")
-                raise ValueError(
-                    f"Site está bloqueando o acesso (403 Forbidden). "
-                    f"Este site ({_domain(url)}) possui proteção anti-bot e não pode ser acessado automaticamente."
+            
+            og_data = OpenGraphData(
+                type=meta.get("og:type"),
+                url=meta.get("og:url"),
+                image=meta.get("og:image")
+            )
+            
+            # Retorna objeto PageContent
+            return PageContent(
+                title=meta.get("title"),
+                description=meta.get("description"),
+                keywords=meta.get("keywords"),
+                canonical=meta.get("canonical"),
+                headings=headings_data,
+                text_full=main_text,
+                og=og_data
+            )
+            
+        except TimeoutException as e:
+            last_exception = e
+            print(f"[SELENIUM] Timeout na tentativa {attempt + 1}: {str(e)}")
+            if attempt >= max_retries:
+                raise TimeoutException(
+                    f"Timeout após {max_retries + 1} tentativas ao acessar {url}. "
+                    f"A página não carregou dentro do tempo limite de {timeout}s."
                 )
-            raise  # Outros erros HTTP
-        except requests.Timeout as e:
-            if attempt < max_retries:
-                # Aguarda antes de tentar novamente (backoff exponencial)
-                wait_time = 2 ** attempt  # 1s, 2s, 4s...
-                print(f"[RETRY] Tentativa {attempt + 1}/{max_retries + 1} falhou por timeout. Aguardando {wait_time}s antes de tentar novamente...")
-                time.sleep(wait_time)
-                # Aumenta timeout progressivamente
-                timeout = timeout * 1.5
-                continue
-            raise requests.Timeout(f"Timeout após {max_retries + 1} tentativas: {e}")
-        except requests.RequestException as e:
-            raise  # Outros erros não tentam novamente
+                
+        except WebDriverException as e:
+            last_exception = e
+            print(f"[SELENIUM] Erro no WebDriver na tentativa {attempt + 1}: {str(e)}")
+            if attempt >= max_retries:
+                raise WebDriverException(
+                    f"Erro no WebDriver após {max_retries + 1} tentativas: {str(e)}"
+                )
+                
+        except Exception as e:
+            last_exception = e
+            print(f"[SELENIUM] Erro inesperado na tentativa {attempt + 1}: {str(e)}")
+            if attempt >= max_retries:
+                raise
+                
+        finally:
+            # Sempre fecha o driver para liberar recursos
+            if driver:
+                try:
+                    driver.quit()
+                except Exception as e:
+                    print(f"[SELENIUM] Erro ao fechar driver: {str(e)}")
+                driver = None
     
-    # Fecha sessão se foi criada
-    if is_blocked and hasattr(session, 'close'):
-        session.close()
-    
-    content_type = resp.headers.get("Content-Type", "").lower()
-    
-    # Verifica se é HTML
-    if not ("text/html" in content_type or "<html" in resp.text.lower()):
-        raise ValueError(f"Conteúdo não é HTML válido. Content-Type: {content_type}")
-    
-    # Extrai dados da página HTML
-    soup = BeautifulSoup(resp.text, "lxml")
-    meta = _extract_meta(soup)
-    headings_dict = _extract_headings(soup)
-    main_text = _extract_main_text(soup)
-    
-    # Cria objetos dos schemas
-    headings_data = HeadingsData(
-        h1=headings_dict.get("h1", []),
-        h2=headings_dict.get("h2", []),
-        h3=headings_dict.get("h3", [])
-    )
-    
-    og_data = OpenGraphData(
-        type=meta.get("og:type"),
-        url=meta.get("og:url"),
-        image=meta.get("og:image")
-    )
-    
-    # Retorna objeto PageContent
-    return PageContent(
-        title=meta.get("title"),
-        description=meta.get("description"),
-        keywords=meta.get("keywords"),
-        canonical=meta.get("canonical"),
-        headings=headings_data,
-        text_full=main_text,
-        og=og_data
-    )
+    # Se chegou aqui, todas as tentativas falharam
+    if last_exception:
+        raise last_exception
+    raise Exception(f"Falha ao acessar {url} após {max_retries + 1} tentativas")
