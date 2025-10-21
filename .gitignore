@@ -207,3 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 /temp/
+
+.env
+entrypoint.sh
+entrypoint-worker.sh
+docker-compose.yml 
