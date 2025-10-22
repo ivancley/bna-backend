@@ -172,7 +172,17 @@ docker-compose ps
    - Funciona independente do contexto de build
    - Configure no Coolify para usar `docker-compose.yaml`
 
-4. **❌ ERRO: "Oops something is not okay"**
+4. **❌ ERRO: "Bind for 0.0.0.0:8000 failed: port is already allocated"**
+   
+   **Causa:** Conflito de porta - a porta 8000 já está sendo usada por outro processo no servidor
+   
+   **Solução:**
+   - ✅ **RESOLVIDO**: Removido mapeamento de porta externa (`ports: - "8000:8000"`)
+   - Usado `expose: - "8000"` para expor apenas internamente
+   - Coolify gerencia automaticamente o mapeamento de portas
+   - Evita conflitos com outras aplicações no servidor
+
+5. **❌ ERRO: "Oops something is not okay"**
    
    **Possíveis causas e soluções:**
    - **Recursos insuficientes**: Aumente RAM/CPU do servidor Coolify
@@ -180,7 +190,7 @@ docker-compose ps
    - **Cache corrompido**: Limpe cache do Coolify
    - **Contexto de build grande**: Use o `.dockerignore` criado
 
-5. **❌ Build muito lento ou falha por timeout**
+6. **❌ Build muito lento ou falha por timeout**
    
    **Soluções:**
    - Use o `.dockerignore` otimizado para reduzir contexto
