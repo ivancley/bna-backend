@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 
 from api.utils.db_services import get_db
 from api.utils.exceptions import exception_invalid_query, exception_nao_encontrado
-from api.utils.jwt_services import get_current_user
+from api.utils.security import get_current_user
+from api.utils.permissions import require
 from api.utils.query_parser import parse_filters
 from api.v1._shared.custom_schemas import RagQueryRequest, RagQueryResponse
 from api.v1._shared.schemas import (
@@ -46,7 +47,7 @@ use_case = WebLinkUseCase()
     # response_model=MedicoResponseList,
     summary="Listar WebLinks",
     description="Recupera uma lista paginada de WebLinks com opções de filtro, ordenação e inclusão de relacionamentos.",
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def list_web_links(
     request: Request, 
@@ -78,7 +79,8 @@ async def list_web_links(
             sort_by=sort_by,
             sort_dir=sort_dir,
             search=search,
-            select_fields=select_fields
+            select_fields=select_fields,
+            user_info=user_info
         )
     except HTTPException as http_exc: 
         raise http_exc
@@ -93,7 +95,7 @@ async def list_web_links(
     response_model=WebLinkView,
     status_code=status.HTTP_201_CREATED,
     summary="Criar um novo WebLink",
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def create_web_link(
     data: WebLinkCreate, 
@@ -115,7 +117,7 @@ async def create_web_link(
     response_model=WebLinkView,
     summary="Obter WebLink por ID",
     responses={404: {"description": "WebLink não encontrado"}},
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def get_web_link_by_id(  
     id: UUID,  
@@ -151,7 +153,7 @@ async def get_web_link_by_id(
     response_model=WebLinkView,
     summary="Atualizar um WebLink",
     responses={404: {"description": "WebLink não encontrado"}},
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def update_web_link(
     id: UUID,
@@ -181,7 +183,7 @@ async def update_web_link(
         204: {"description": "WebLink deletado com sucesso"},
         404: {"description": "WebLink não encontrado"}
     },
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def delete_web_link(
     id: UUID,
@@ -211,7 +213,7 @@ async def delete_web_link(
         404: {"description": "WebLink não encontrado ou sem conhecimento ingerido"},
         400: {"description": "Erro na requisição"}
     },
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["RAG"]))]
 )
 async def ask_weblink(
     id: UUID,

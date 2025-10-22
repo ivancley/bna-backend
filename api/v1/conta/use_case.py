@@ -16,6 +16,7 @@ from api.v1._shared.schemas import (
 )
 from api.v1.conta.service import ContaService
 from api.v1.conta.mapper import conta_mapper
+from api.utils.permissions import DEFAULT_USER_PERMISSIONS
 
 class ContaUseCase:
     """
@@ -30,7 +31,10 @@ class ContaUseCase:
     
     async def register(self, db: Session, data: ContaCreate) -> ContaView:
         """
-        Register a new user account.
+        Register a new user account with default permissions.
+        
+        Business rule: New users receive default permissions ["RAG", "LINK"]
+        unless explicitly specified.
         
         Args:
             db: Database session
@@ -40,6 +44,16 @@ class ContaUseCase:
             ContaView with user data (without sensitive fields)
         """
         try:
+            # Aplicar permissões padrão se não foram fornecidas (REGRA DE NEGÓCIO)
+            if data.permissoes is None or data.permissoes == []:
+                # Criar nova instância com permissões padrão
+                data = ContaCreate(
+                    nome=data.nome,
+                    email=data.email,
+                    senha=data.senha,
+                    permissoes=DEFAULT_USER_PERMISSIONS  # ["RAG", "LINK"]
+                )
+            
             user = self.service.register(db, data)
             return conta_mapper.map_to_conta_view(user)
         except HTTPException:

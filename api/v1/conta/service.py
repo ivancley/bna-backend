@@ -72,7 +72,8 @@ class ContaService:
         usuario_data = UsuarioCreate(
             nome=data.nome,
             email=data.email,
-            senha=hashed_password
+            senha=hashed_password,
+            permissoes=data.permissoes if hasattr(data, 'permissoes') else None
         )
         
         try:

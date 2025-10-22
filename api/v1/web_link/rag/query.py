@@ -11,7 +11,7 @@ from api.v1._database.models import Conhecimento, WebLink
 logger = logging.getLogger(__name__)
 
 MODEL = "gpt-4o-mini"
-TOP_K = 3
+TOP_K = 5
 MAX_TOKENS = 500
 TEMPERATURE = 0.3
 

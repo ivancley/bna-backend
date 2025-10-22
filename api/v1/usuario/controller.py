@@ -6,10 +6,12 @@ from api.v1.usuario.use_case import UsuarioUseCase
 from api.v1._shared.schemas import (
     UsuarioCreate,
     UsuarioUpdate,
-    UsuarioView
+    UsuarioView,
+    UsuarioPermissoesUpdate
 )
 from api.utils.db_services import get_db
-from api.utils.jwt_services import get_current_user
+from api.utils.security import get_current_user
+from api.utils.permissions import require
 from api.utils.exceptions import exception_nao_encontrado, exception_invalid_query
 from api.utils.query_parser import parse_filters
 
@@ -21,11 +23,32 @@ router = APIRouter(
 use_case = UsuarioUseCase()
 
 @router.get(
+    "/me",
+    response_model=UsuarioView,
+    summary="Obter informações do usuário logado",
+    description="Retorna as informações e permissões do usuário autenticado atualmente.",
+)
+async def get_me(
+    current_user = Depends(get_current_user)
+):
+    """
+    Endpoint público (apenas requer autenticação) para o usuário verificar suas próprias informações.
+    
+    Retorna:
+    - Dados completos do usuário
+    - Lista de permissões que o usuário possui
+    """
+    # current_user já é o objeto Usuario completo do banco (vem de security.get_current_user)
+    # Converter para UsuarioView usando Pydantic
+    return UsuarioView.model_validate(current_user)
+
+
+@router.get(
     "/",
     # response_model=UsuarioResponseList,
     summary="Listar Usuarios",
     description="Recupera uma lista paginada de Usuarios com opções de filtro, ordenação e inclusão de relacionamentos.",
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["ADMIN"]))]
 )
 async def list_usuarios(
     request: Request, 
@@ -73,7 +96,7 @@ async def list_usuarios(
     response_model=UsuarioView,
     status_code=status.HTTP_201_CREATED,
     summary="Criar um novo Usuario",
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["LINK"]))]
 )
 async def create_usuario(
     data: UsuarioCreate, 
@@ -95,7 +118,7 @@ async def create_usuario(
     # response_model=UsuarioView,
     summary="Obter Usuario por ID",
     responses={404: {"description": "Usuario não encontrado"}},
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["ADMIN"]))]
 )
 async def get_usuario_by_id(  
     id: UUID,  
@@ -132,7 +155,7 @@ async def get_usuario_by_id(
     response_model=UsuarioView,
     summary="Atualizar um Usuario",
     responses={404: {"description": "Usuario não encontrado"}},
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["ADMIN"]))]
 )
 async def update_usuario(
     id: UUID,
@@ -154,6 +177,94 @@ async def update_usuario(
     return updated_entity
 
 
+@router.patch(
+    "/{id}/permissoes",
+    response_model=UsuarioView,
+    summary="Atualizar permissões de um usuário",
+    description="Permite que administradores atualizem as permissões de um usuário. As permissões são substituídas completamente.",
+    responses={404: {"description": "Usuario não encontrado"}},
+    dependencies=[Depends(require(["ADMIN"]))]
+)
+async def update_usuario_permissoes(
+    id: UUID,
+    data: UsuarioPermissoesUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Atualiza as permissões de um usuário (apenas ADMIN).
+    
+    As permissões válidas são:
+    - **LINK**: CRUD de Links (WebLinks)
+    - **RAG**: Permitir fazer perguntas ao RAG
+    - **ADMIN**: Gerenciar usuários e permissões
+    
+    **Atenção**: Este endpoint substitui completamente as permissões anteriores.
+    """
+    try:
+        # Usar o update normal do use_case com as novas permissões
+        update_data = UsuarioUpdate(permissoes=data.permissoes)
+        updated_entity = await use_case.update(db=db, id=id, data=update_data)
+        
+        if updated_entity is None:
+            raise exception_nao_encontrado("Usuario")
+        
+        return updated_entity
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print(f"Erro inesperado ao atualizar permissões do usuário {id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno ao atualizar permissões do usuário"
+        )
+
+
+@router.patch(
+    "/{id}/desativar",
+    response_model=UsuarioView,
+    summary="Desativar um usuário",
+    description="Desativa um usuário, impedindo seu acesso ao sistema. O usuário não é deletado, apenas inativado.",
+    responses={404: {"description": "Usuario não encontrado"}},
+    dependencies=[Depends(require(["ADMIN"]))]
+)
+async def desativar_usuario(
+    id: UUID,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Desativa um usuário (apenas ADMIN).
+    
+    O usuário desativado:
+    - Não consegue fazer login
+    - Perde acesso a todos os endpoints
+    - Seus dados são mantidos no sistema
+    - Pode ser reativado posteriormente via PATCH /usuarios/{id} com flg_ativo=true
+    """
+    try:
+        # Atualizar o flag de ativo para False
+        update_data = UsuarioUpdate(flg_ativo=False)
+        updated_entity = await use_case.update(db=db, id=id, data=update_data)
+        
+        if updated_entity is None:
+            raise exception_nao_encontrado("Usuario")
+        
+        return updated_entity
+        
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        print(f"Erro inesperado ao desativar usuário {id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno ao desativar usuário"
+        )
+
+
 @router.delete(
     "/{id}",
     status_code=status.HTTP_204_NO_CONTENT, 
@@ -162,7 +273,7 @@ async def update_usuario(
         204: {"description": "Usuario deletado com sucesso"},
         404: {"description": "Usuario não encontrado"}
     },
-    dependencies=[Depends(get_current_user)]
+    dependencies=[Depends(require(["ADMIN"]))]
 )
 async def delete_usuario(
     id: UUID,

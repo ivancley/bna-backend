@@ -5,7 +5,7 @@ from enum import Enum as PyEnum
 from datetime import datetime
 from sqlalchemy import (
     Table, Column, String, Text, Date, DateTime, Boolean, ForeignKey, Index,
-    Enum as SqlAlchemyEnum, Integer # Adicionar Integer
+    Enum as SqlAlchemyEnum, Integer, ARRAY # Adicionar Integer e ARRAY
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, TEXT
 from sqlalchemy.orm import relationship, declarative_base, Mapped, mapped_column
@@ -17,6 +17,13 @@ from pgvector.sqlalchemy import Vector
 Base = declarative_base()
 tz = pytz.timezone('America/Sao_Paulo') # Defina seu timezone
 logger = logging.getLogger(__name__)
+
+
+class PermissaoTipo(str, PyEnum):
+    """Tipos de permissões do sistema"""
+    LINK = "LINK"      # CRUD de Links (WebLinks)
+    RAG = "RAG"        # Permitir fazer perguntas ao RAG
+    ADMIN = "ADMIN"    # CRUD de Usuários (desativar usuários e gerenciar permissões)
 
 
 class BaseModel(Base):
@@ -33,7 +40,8 @@ class Usuario(BaseModel):
        
     nome = Column(String(255), nullable=False)   
     email = Column(String(255), nullable=False, unique=True, index=True)   
-    senha = Column(String(255), nullable=True) 
+    senha = Column(String(255), nullable=True)
+    permissoes = Column(ARRAY(String), nullable=False, default=list, server_default='{}')
 
     # Relacionamento
     web_links: Mapped[List["WebLink"]] = relationship("WebLink", back_populates="usuario", lazy="selectin")
@@ -78,7 +86,7 @@ class Conhecimento(Base):
     __tablename__ = "conhecimento"
     id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     title = Column(TEXT, nullable=False)
-    context = Column(String(255), nullable=False, index=True)
+    context = Column(TEXT, nullable=False, index=True)  # Alterado de String(255) para TEXT
     content = Column(TEXT, nullable=False)
     embedding = Column(Vector(EMBED_DIM), nullable=False)
 

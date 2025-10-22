@@ -12,12 +12,21 @@ MAX_OUTPUT_TOKENS = 200  # ~150 palavras em português
 CHUNK_SIZE = 10000 
 OPENAI_API_KEY = config("OPENAI_API_KEY")
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT1 = """
 Você é um assistente que resume textos de forma fiel, concisa e objetiva. 
 Use o idioma Português, seja claro e não invente informações.
 Crie um resumo executivo em um parágrafo de aproximadamente 100-150 palavras, destacando os pontos principais.
 """
 
+SYSTEM_PROMPT = """
+Você é um assistente especializado em resumir textos de forma fiel, concisa e direta. 
+Resuma o conteúdo em **tópicos claros e objetivos**, com frases curtas e linguagem executiva.
+Use o idioma Português e **não invente informações**.  
+Estrutura de saída:
+- Título geral (1 linha)
+- 5 a 8 tópicos principais destacando ideias-chave, decisões, dados e conclusões.
+- Se aplicável, um tópico final chamado "Síntese" com uma frase que resume o todo.
+"""
 
 def _truncate_text(text: str, max_chars: int) -> str:
     """Trunca texto mantendo palavras inteiras."""

@@ -27,29 +27,46 @@ class UsuarioBase(CustomBaseModel):
     nome: str
     email: str
     senha: Optional[str] = None
+    permissoes: List[str] = Field(default_factory=lambda: ["RAG", "LINK"])
 
 class UsuarioCreate(BaseModel): 
     nome: str 
     email: str 
     senha: str
+    permissoes: Optional[List[str]] = Field(default=None, description="Permissões do usuário. Se não informado, usa padrão: ['RAG', 'LINK']")
 
 
 class UsuarioUpdate(BaseModel): 
     nome: Optional[str] = Field(None) 
     email: Optional[str] = Field(None) 
-    senha: Optional[str] = Field(None) 
+    senha: Optional[str] = Field(None)
+    permissoes: Optional[List[str]] = Field(None)
     model_config: Dict[str, Any] = {"arbitrary_types_allowed": True}
+    
+    @model_validator(mode='after')
+    def validate_permissoes(self):
+        """Valida se as permissões são válidas quando fornecidas"""
+        if self.permissoes is not None:
+            valid_perms = {"LINK", "RAG", "ADMIN"}
+            invalid = set(self.permissoes) - valid_perms
+            if invalid:
+                raise ValueError(f"Permissões inválidas: {', '.join(invalid)}. Permissões válidas: {', '.join(valid_perms)}")
+        return self
     
 
 class UsuarioGeneric(CustomBaseModel):
     nome: Optional[str] = Field(None)
     email: Optional[str] = Field(None)
     senha: Optional[str] = Field(None)
+    permissoes: Optional[List[str]] = Field(None)
     model_config: Dict[str, Any] = {"arbitrary_types_allowed": True, "from_attributes": True}
 
 
-class UsuarioView(UsuarioBase):
+class UsuarioView(BaseModel):
     id: UUID
+    nome: Optional[str] = Field(None)
+    email: Optional[str] = Field(None)
+    permissoes: Optional[List[str]] = Field(None)
     flg_ativo: bool
     flg_excluido: bool
     created_at: datetime
@@ -182,6 +199,7 @@ class ContaCreate(BaseModel):
     nome: str
     email: str
     senha: str = Field(..., min_length=6, description="Senha deve ter pelo menos 6 caracteres")
+    permissoes: Optional[List[str]] = Field(default=None, description="Permissões do usuário. Se não informado, usa padrão: ['RAG', 'LINK']")
 
 class ContaLogin(BaseModel):
     """Schema para login"""
@@ -220,6 +238,20 @@ class ContaView(CustomBaseModel):
     updated_at: datetime
     model_config: Dict[str, Any] = {"from_attributes": True}
 
+
+class UsuarioPermissoesUpdate(BaseModel):
+    """Schema para atualizar permissões de um usuário (apenas admin)"""
+    permissoes: List[str] = Field(..., description="Lista de permissões: LINK, RAG, ADMIN")
+    
+    @model_validator(mode='after')
+    def validate_permissoes(self):
+        """Valida se as permissões são válidas"""
+        valid_perms = {"LINK", "RAG", "ADMIN"}
+        invalid = set(self.permissoes) - valid_perms
+        if invalid:
+            raise ValueError(f"Permissões inválidas: {', '.join(invalid)}. Permissões válidas: {', '.join(valid_perms)}")
+        return self
+
 # --- Atualizar Forward References ---
 # Usuario schemas
 UsuarioBase.model_rebuild()
@@ -228,6 +260,7 @@ UsuarioUpdate.model_rebuild()
 UsuarioGeneric.model_rebuild()
 UsuarioView.model_rebuild()
 UsuarioResponseList.model_rebuild()
+UsuarioPermissoesUpdate.model_rebuild()
 
 # WebLink schemas
 WebLinkBase.model_rebuild()

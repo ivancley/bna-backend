@@ -39,13 +39,13 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         self.map_to_view = map_to_view
         self.map_list_to_view = map_list_to_view
 
-    def _assign_usuario_id(self, data: Any, user_info: Optional[Tuple] = None) -> Any:
+    def _assign_usuario_id(self, data: Any, user_info: Optional[Any] = None) -> Any:
         """
         Assign usuario_id to data if not provided and user_info is available.
         
         Args:
             data: The schema data (Create or Update)
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
             
         Returns:
             The data with usuario_id assigned if needed
@@ -55,7 +55,8 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             # atribui do user_info
             if user_info is not None:
                 try:
-                    logged_user_id = user_info[0]  # get_current_user retorna (sub, token)
+                    # user_info agora é um objeto Usuario, não mais uma tupla
+                    logged_user_id = user_info.id if hasattr(user_info, 'id') else user_info
                     
                     # Converte para UUID se necessário
                     if not isinstance(logged_user_id, UUID):
@@ -85,7 +86,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         sort_dir: Optional[Literal["asc", "desc"]],
         search: Optional[str] = None,
         select_fields: Optional[str] = None,
-        user_info: Optional[Tuple] = None,
+        user_info: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Get all entities with pagination, filtering, and sorting.
@@ -98,7 +99,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             filter_params: Filtering parameters
             sort_by: Field to sort by
             sort_dir: Sort direction (asc or desc)
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             Dictionary with total count and list of view models
@@ -109,7 +110,8 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             
             user_id = None
             if user_info:
-                user_id = user_info[0]  # Extract user_id from tuple
+                # user_info agora é um objeto Usuario, não mais uma tupla
+                user_id = user_info.id if hasattr(user_info, 'id') else user_info
                 # Convert to UUID if necessary
                 if not isinstance(user_id, UUID):
                     user_id = UUID(str(user_id))
@@ -157,7 +159,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         self,
         db: Session,
         data: CreateSchemaType,
-        user_info: Optional[Tuple] = None
+        user_info: Optional[Any] = None
     ) -> ViewSchemaType:
         """
         Create a new entity.
@@ -165,7 +167,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         Args:
             db: Database session
             data: Data for creating the entity
-            user_info: Optional tuple containing (user_id, token) from authentication
+            user_info: Optional Usuario object from authentication (from security.get_current_user)
 
         Returns:
             View model of the created entity
@@ -189,7 +191,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         id: UUID,
         include: Optional[List[str]] = None,
         select_fields: Optional[List[str]] = None,
-        user_info: Optional[Tuple] = None,
+        user_info: Optional[Any] = None,
     ) -> Optional[ViewSchemaType]:
         """
         Get an entity by ID.
@@ -198,7 +200,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             db: Database session
             id: Entity ID
             include: Related entities to include
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             View model of the entity or None if not found
@@ -206,7 +208,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         try:
             user_id = None
             if user_info:
-                user_id = user_info[0]  # Extract user_id from tuple
+                user_id = user_info.id if hasattr(user_info, 'id') else user_info  # Extract user_id from Usuario object
                 # Convert to UUID if necessary
                 if not isinstance(user_id, UUID):
                     user_id = UUID(str(user_id))
@@ -238,7 +240,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         db: Session,
         id: UUID,
         data: UpdateSchemaType,
-        user_info: Optional[Tuple] = None
+        user_info: Optional[Any] = None
     ) -> Optional[ViewSchemaType]:
         """
         Update an existing entity.
@@ -247,14 +249,14 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             db: Database session
             id: Entity ID
             data: Data for updating the entity
-            user_info: Optional tuple containing (user_id, token) from authentication
+            user_info: Optional Usuario object from authentication (from security.get_current_user)
 
         Returns:
             View model of the updated entity or None if not found
         """
         user_id = None
         if user_info:
-            user_id = user_info[0]  # Extract user_id from tuple
+            user_id = user_info.id if hasattr(user_info, 'id') else user_info
             # Convert to UUID if necessary
             if not isinstance(user_id, UUID):
                 user_id = UUID(str(user_id))
@@ -280,7 +282,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         self,
         db: Session,
         id: UUID,
-        user_info: Optional[Tuple] = None
+        user_info: Optional[Any] = None
     ) -> Optional[Any]:
         """
         Delete an entity.
@@ -288,14 +290,14 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         Args:
             db: Database session
             id: Entity ID
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             The deleted entity or None if not found
         """
         user_id = None
         if user_info:
-            user_id = user_info[0]  # Extract user_id from tuple
+            user_id = user_info.id if hasattr(user_info, 'id') else user_info
             # Convert to UUID if necessary
             if not isinstance(user_id, UUID):
                 user_id = UUID(str(user_id))
@@ -318,7 +320,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         self,
         db: Session,
         id: UUID,
-        user_info: Optional[Tuple] = None
+        user_info: Optional[Any] = None
     ) -> Optional[ViewSchemaType]:
         """
         Restore a soft deleted entity.
@@ -326,7 +328,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         Args:
             db: Database session
             id: Entity ID
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             View model of the restored entity or None if not found
@@ -334,7 +336,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         try:
             user_id = None
             if user_info:
-                user_id = user_info[0]  # Extract user_id from tuple
+                user_id = user_info.id if hasattr(user_info, 'id') else user_info  # Extract user_id from Usuario object
                 # Convert to UUID if necessary
                 if not isinstance(user_id, UUID):
                     user_id = UUID(str(user_id))
@@ -362,7 +364,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         sort_dir: Optional[Literal["asc", "desc"]],
         search: Optional[str] = None,
         select_fields: Optional[str] = None,
-        user_info: Optional[Tuple] = None,
+        user_info: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Get all soft deleted entities with pagination, filtering, and sorting.
@@ -375,7 +377,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
             filter_params: Filtering parameters
             sort_by: Field to sort by
             sort_dir: Sort direction (asc or desc)
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             Dictionary with total count and list of view models
@@ -383,7 +385,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         try:
             user_id = None
             if user_info:
-                user_id = user_info[0]  # Extract user_id from tuple
+                user_id = user_info.id if hasattr(user_info, 'id') else user_info  # Extract user_id from Usuario object
                 # Convert to UUID if necessary
                 if not isinstance(user_id, UUID):
                     user_id = UUID(str(user_id))
@@ -415,7 +417,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         self,
         db: Session,
         id: UUID,
-        user_info: Optional[Tuple] = None
+        user_info: Optional[Any] = None
     ) -> Optional[Any]:
         """
         Hard delete an entity (permanently remove from database).
@@ -423,7 +425,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         Args:
             db: Database session
             id: Entity ID
-            user_info: Tuple containing (user_id, token) from authentication
+            user_info: Usuario object from authentication (from security.get_current_user)
 
         Returns:
             The deleted entity or None if not found
@@ -431,7 +433,7 @@ class BaseUseCase(Generic[ModelType, CreateSchemaType, UpdateSchemaType, ViewSch
         try:
             user_id = None
             if user_info:
-                user_id = user_info[0]  # Extract user_id from tuple
+                user_id = user_info.id if hasattr(user_info, 'id') else user_info  # Extract user_id from Usuario object
                 # Convert to UUID if necessary
                 if not isinstance(user_id, UUID):
                     user_id = UUID(str(user_id))

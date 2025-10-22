@@ -4,13 +4,12 @@ import random
 import re
 import sys
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -18,7 +17,6 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 
 from api.v1._shared.custom_schemas import HeadingsData, OpenGraphData, PageContent
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 # User Agents variados para anti-detecção
 USER_AGENTS = [
@@ -30,78 +28,62 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15"
 ]
 
-
 def _get_random_user_agent() -> str:
-    """Retorna um User-Agent aleatório para evitar detecção."""
     return random.choice(USER_AGENTS)
 
-
-def _create_chrome_driver() -> webdriver.Chrome:
-    """
-    Cria e configura uma instância do Chrome WebDriver com opções anti-detecção.
-    
-    Returns:
-        webdriver.Chrome: Instância configurada do Chrome WebDriver
-    """
+def _create_chrome_driver_headless() -> webdriver.Chrome:
+    """Cria driver em modo headless invisível, com JS habilitado e imagens desabilitadas via prefs."""
     chrome_options = Options()
-    
-    # Modo headless (sem interface gráfica)
-    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--headless=new")  # headless invisível moderno
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    
-    # Configurações de window para parecer mais natural
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--start-maximized")
-    
-    # User Agent aleatório
-    chrome_options.add_argument(f"user-agent={_get_random_user_agent()}")
-    
-    # Configurações anti-detecção
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--disable-software-rasterizer")
+
+    # User-Agent realista e aleatório
+    user_agent = _get_random_user_agent()
+    chrome_options.add_argument(f"--user-agent={user_agent}")
+
+    # Anti-detecção básica
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
-    
-    # Configurações de performance
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-infobars")
-    chrome_options.add_argument("--disable-notifications")
-    
-    # Preferências adicionais
-    prefs = {
-        "profile.default_content_setting_values.notifications": 2,
-        "profile.default_content_settings.popups": 0,
-        "profile.default_content_setting_values.media_stream_mic": 2,
-        "profile.default_content_setting_values.media_stream_camera": 2,
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+
+    # Preferências para acelerar: desabilitar imagens (JS permanece ATIVADO)
+    chrome_prefs = {
+        "profile.managed_default_content_settings.images": 2,
+        "profile.default_content_setting_values.images": 2,
+        "profile.managed_default_content_settings.stylesheets": 1,  # CSS habilitado
+        "profile.managed_default_content_settings.javascript": 1,   # JS habilitado
     }
-    chrome_options.add_experimental_option("prefs", prefs)
-    
-    # Cria o driver
+    chrome_options.add_experimental_option("prefs", chrome_prefs)
+
+    # Aceite de idioma e formato
+    chrome_options.add_argument("--accept-language=pt-BR,pt;q=0.9,en;q=0.8")
+
+    # Não aguarda carregamento total da página (controle manual via polling)
+    chrome_options.page_load_strategy = "none"
+
+    # Logs silenciosos
+    chrome_options.add_argument("--log-level=3")
+
     driver = webdriver.Chrome(options=chrome_options)
-    
-    # Script para mascarar detecção de Selenium
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['pt-BR', 'pt', 'en-US', 'en']
-            });
-        """
-    })
-    
+
+    # Tempo de carregamento por navegação (defensivo — usamos polling mesmo com page_load_strategy='none')
+    driver.set_page_load_timeout(30)
+
+    # Mascaramento adicional
+    try:
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR', 'pt', 'en']})")
+    except Exception:
+        pass
+
     return driver
 
-
 def _clean_text(text: str) -> str:
-    """Normaliza espaços em branco."""
     return re.sub(r"\s+", " ", text).strip()
-
 
 def _extract_meta(soup: BeautifulSoup) -> Dict[str, Optional[str]]:
     def meta(name: str) -> Optional[str]:
@@ -138,161 +120,164 @@ def _extract_headings(soup: BeautifulSoup) -> Dict[str, List[str]]:
     return data
 
 def _extract_main_text(soup: BeautifulSoup, min_len: int = 40) -> str:
-    """
-    Extrai um 'texto principal' simples juntando parágrafos relevantes.
-    """
-    # Remove elementos que raramente contribuem para o conteúdo
-    for bad in soup(["script", "style", "noscript", "header", "footer", "nav", "form", "aside"]):
-        bad.decompose()
-
-    paragraphs = []
-    for p in soup.find_all("p"):
-        txt = _clean_text(p.get_text(" "))
-        if len(txt) >= min_len:
-            paragraphs.append(txt)
-
-    # Limita tamanho para evitar JSON enorme
-    joined = "\n\n".join(paragraphs)
-    return joined[:20000]  # ~20KB de texto
+    if soup.body:
+        text = soup.body.get_text(" ", strip=True)
+    else:
+        text = soup.get_text(" ", strip=True)
+    return text[:20000]
 
 def _domain(url: str) -> str:
-    """Extrai o domínio de uma URL."""
     try:
         return urlparse(url).netloc
     except Exception:
         return ""
 
+def _poll_until_ready_or_timeout(
+    driver: webdriver.Chrome,
+    url: str,
+    max_seconds: float = 30.0,
+    poll_interval: float = 0.25
+) -> Tuple[str, bool]:
+    """
+    Navega e faz polling até existir <body> OU estourar o tempo.
+    Retorna (page_source, timed_out).
+    """
+    start = time.monotonic()
+    timed_out = False
 
-def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 2) -> PageContent:
-    """
-    Faz o scraping de uma URL usando Selenium e retorna um objeto PageContent com o conteúdo extraído.
-    
-    Estratégias anti-detecção implementadas:
-    - User-Agent aleatório
-    - Delays aleatórios entre ações
-    - Mascaramento de propriedades do Selenium
-    - Espera inteligente por elementos da página
-    
-    Args:
-        url: URL da página a ser extraída
-        timeout: Tempo máximo de espera em segundos (padrão: 30s)
-        max_retries: Número máximo de tentativas em caso de falha (padrão: 2)
-        
-    Returns:
-        PageContent: Objeto com título, descrição, conteúdo e metadados da página
-        
-    Raises:
-        TimeoutException: Se a página não carregar dentro do timeout
-        WebDriverException: Se houver erro no WebDriver
-        ValueError: Se o conteúdo não for HTML válido
-    """
-    driver = None
-    last_exception = None
-    
-    for attempt in range(max_retries + 1):
+    # Tenta navegar (não bloqueante por 'none', mas ainda pode esperar um pouco).
+    try:
+        driver.get(url)
+    except TimeoutException:
+        # Se houve timeout do próprio get, seguimos para capturar o que tiver.
+        pass
+    except WebDriverException:
+        # Repassar para o chamador tratar retry
+        raise
+
+    # Aguarda presença de <body> ou até estourar o tempo
+    body_found = False
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed >= max_seconds:
+            timed_out = True
+            break
         try:
-            print(f"[SELENIUM] Tentativa {attempt + 1}/{max_retries + 1} - Acessando: {url}")
-            
-            # Delay aleatório entre tentativas (anti-detecção)
-            if attempt > 0:
-                delay = random.uniform(2, 5)
-                print(f"[SELENIUM] Aguardando {delay:.2f}s antes de tentar novamente...")
-                time.sleep(delay)
-            
-            # Cria o driver Chrome
-            driver = _create_chrome_driver()
-            driver.set_page_load_timeout(timeout)
-            
-            # Acessa a URL
-            driver.get(url)
-            
-            # Delay aleatório para simular comportamento humano
-            time.sleep(random.uniform(1, 3))
-            
-            # Aguarda até que o body esteja presente (indica que a página carregou)
-            wait = WebDriverWait(driver, timeout)
-            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
-            
-            # Aguarda um pouco mais para JavaScript dinâmico carregar
-            time.sleep(random.uniform(1, 2))
-            
-            # Scroll suave para simular comportamento humano e carregar lazy load
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 2);")
-            time.sleep(0.5)
-            driver.execute_script("window.scrollTo(0, 0);")
-            
-            # Obtém o HTML renderizado
-            page_source = driver.page_source
-            
-            # Verifica se é HTML
-            if not ("<html" in page_source.lower() or "<body" in page_source.lower()):
-                raise ValueError(f"Conteúdo não é HTML válido")
-            
-            print(f"[SELENIUM] Página carregada com sucesso: {url}")
-            
-            # Extrai dados da página HTML com BeautifulSoup
-            soup = BeautifulSoup(page_source, "lxml")
-            meta = _extract_meta(soup)
-            headings_dict = _extract_headings(soup)
-            main_text = _extract_main_text(soup)
-            
-            # Cria objetos dos schemas
-            headings_data = HeadingsData(
-                h1=headings_dict.get("h1", []),
-                h2=headings_dict.get("h2", []),
-                h3=headings_dict.get("h3", [])
+            # Aguarda rapidamente pela presença do body (não bloqueante por muito tempo)
+            WebDriverWait(driver, poll_interval).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            
-            og_data = OpenGraphData(
-                type=meta.get("og:type"),
-                url=meta.get("og:url"),
-                image=meta.get("og:image")
-            )
-            
-            # Retorna objeto PageContent
-            return PageContent(
-                title=meta.get("title"),
-                description=meta.get("description"),
-                keywords=meta.get("keywords"),
-                canonical=meta.get("canonical"),
-                headings=headings_data,
-                text_full=main_text,
-                og=og_data
-            )
-            
-        except TimeoutException as e:
-            last_exception = e
-            print(f"[SELENIUM] Timeout na tentativa {attempt + 1}: {str(e)}")
-            if attempt >= max_retries:
-                raise TimeoutException(
-                    f"Timeout após {max_retries + 1} tentativas ao acessar {url}. "
-                    f"A página não carregou dentro do tempo limite de {timeout}s."
-                )
-                
+            body_found = True
+            break
+        except TimeoutException:
+            # segue o loop até estourar o tempo
+            continue
+
+    # Coleta o que tiver
+    try:
+        page_source = driver.page_source or ""
+    except Exception:
+        page_source = ""
+
+    # Se o body apareceu muito cedo, dá um micro-respiro para render dinâmico (sem estourar 30s)
+    if body_found and not timed_out:
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed >= max_seconds:
+                timed_out = True
+                break
+            # Pequeno polling para permitir carregamento incremental
+            time.sleep(poll_interval)
+            # Heurística simples: se DOM cresce, continua mais um ciclo; senão, para
+            try:
+                current_len = len(driver.page_source or "")
+            except Exception:
+                current_len = len(page_source)
+            if current_len <= len(page_source):
+                break
+            page_source = driver.page_source or ""
+
+    return page_source, timed_out
+
+def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageContent:
+    """
+    Faz o scraping de uma URL usando Selenium headless e retorna um PageContent.
+    - Navegação+render por tentativa: máx. 30s (default).
+    - Até 2 tentativas (max_retries=1 => 2 tentativas).
+    - Se estourar o tempo, retorna conteúdo parcial com timed_out=True.
+    - Extração (BeautifulSoup) ocorre fora do limite de 30s.
+
+    Raises:
+        WebDriverException em falhas críticas do WebDriver após as tentativas.
+        ValueError se nenhum HTML válido for obtido.
+    """
+    # Garanta no máx. 2 tentativas
+    max_retries = min(max_retries, 1)
+
+    best_html = ""
+    best_timed_out = False
+    last_exception = None
+
+    for attempt in range(max_retries + 1):
+        driver = None
+        try:
+            driver = _create_chrome_driver_headless()
+            html, timed_out = _poll_until_ready_or_timeout(driver, url, max_seconds=timeout, poll_interval=0.25)
+
+            # Guarda o "melhor" HTML (por tamanho) entre tentativas
+            if len(html) > len(best_html):
+                best_html = html
+                best_timed_out = timed_out
+
+            # Se já temos algo razoável, podemos encerrar cedo (por ex., body presente)
+            if html and ("<html" in html.lower() or "<body" in html.lower()):
+                # se não estourou, ótimo — se estourou, mesmo assim retornaremos parcial
+                break
+
         except WebDriverException as e:
             last_exception = e
-            print(f"[SELENIUM] Erro no WebDriver na tentativa {attempt + 1}: {str(e)}")
-            if attempt >= max_retries:
-                raise WebDriverException(
-                    f"Erro no WebDriver após {max_retries + 1} tentativas: {str(e)}"
-                )
-                
-        except Exception as e:
-            last_exception = e
-            print(f"[SELENIUM] Erro inesperado na tentativa {attempt + 1}: {str(e)}")
-            if attempt >= max_retries:
-                raise
-                
         finally:
-            # Sempre fecha o driver para liberar recursos
             if driver:
                 try:
                     driver.quit()
-                except Exception as e:
-                    print(f"[SELENIUM] Erro ao fechar driver: {str(e)}")
-                driver = None
+                except Exception:
+                    pass
+
+    if not best_html:
+        # Se nada foi obtido, propaga última exceção ou gera erro claro
+        if last_exception:
+            raise WebDriverException(f"Falha ao carregar {url}: {last_exception}")
+        raise ValueError(f"Nenhum HTML válido obtido em {url}")
+
+    # ===== Extração (fora do limite de 30s) =====
+    soup = BeautifulSoup(best_html, "lxml")
+    meta = _extract_meta(soup)
+    headings_dict = _extract_headings(soup)
+    main_text = _extract_main_text(soup)
     
-    # Se chegou aqui, todas as tentativas falharam
-    if last_exception:
-        raise last_exception
-    raise Exception(f"Falha ao acessar {url} após {max_retries + 1} tentativas")
+    #print(soup.body.prettify())
+    #print(soup.body.get_text(" ", strip=True))
+
+    headings_data = HeadingsData(
+        h1=headings_dict.get("h1", []),
+        h2=headings_dict.get("h2", []),
+        h3=headings_dict.get("h3", [])
+    )
+
+    og_data = OpenGraphData(
+        type=meta.get("og:type"),
+        url=meta.get("og:url"),
+        image=meta.get("og:image")
+    )
+
+    # Retorna objeto PageContent — inclui timed_out=True/False conforme solicitado
+    return PageContent(
+        title=meta.get("title"),
+        description=meta.get("description"),
+        keywords=meta.get("keywords"),
+        canonical=meta.get("canonical"),
+        headings=headings_data,
+        text_full=main_text,
+        og=og_data,
+        timed_out=best_timed_out  # <- NOVO CAMPO
+    )
