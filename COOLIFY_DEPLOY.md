@@ -140,11 +140,12 @@ docker-compose ps
 
 1. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
    
-   **Causa:** O `.dockerignore` estava excluindo arquivos essenciais
+   **Causa:** Problema de contexto de build no Coolify
    
    **Solução:**
-   - ✅ **RESOLVIDO**: O `.dockerignore` foi corrigido
-   - Use os arquivos Docker originais normalmente
+   - ✅ **RESOLVIDO**: Entrypoints criados diretamente nos Dockerfiles
+   - Não depende mais de arquivos externos
+   - Funciona independente do contexto de build
    - Configure no Coolify para usar `docker-compose.yml`
 
 2. **❌ ERRO: "Oops something is not okay"**

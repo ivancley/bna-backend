@@ -76,9 +76,30 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia código da aplicação
 COPY . .
 
-# Copia e configura entrypoint do worker
-COPY entrypoint-worker.sh /entrypoint-worker.sh
-RUN chmod +x /entrypoint-worker.sh
+# Cria entrypoint do worker diretamente no Dockerfile
+RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
+    echo 'set -e' >> /entrypoint-worker.sh && \
+    echo 'echo "🔄 Aguardando PostgreSQL estar pronto..."' >> /entrypoint-worker.sh && \
+    echo 'until nc -z postgres 5432; do' >> /entrypoint-worker.sh && \
+    echo '  echo "⏳ PostgreSQL ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
+    echo '  sleep 2' >> /entrypoint-worker.sh && \
+    echo 'done' >> /entrypoint-worker.sh && \
+    echo 'echo "✅ PostgreSQL está pronto!"' >> /entrypoint-worker.sh && \
+    echo 'echo "🔄 Aguardando Redis estar pronto..."' >> /entrypoint-worker.sh && \
+    echo 'until nc -z redis 6379; do' >> /entrypoint-worker.sh && \
+    echo '  echo "⏳ Redis ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
+    echo '  sleep 2' >> /entrypoint-worker.sh && \
+    echo 'done' >> /entrypoint-worker.sh && \
+    echo 'echo "✅ Redis está pronto!"' >> /entrypoint-worker.sh && \
+    echo 'echo "🔄 Aguardando FastAPI estar pronto..."' >> /entrypoint-worker.sh && \
+    echo 'until curl -f http://app:8000/health 2>/dev/null; do' >> /entrypoint-worker.sh && \
+    echo '  echo "⏳ FastAPI ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
+    echo '  sleep 5' >> /entrypoint-worker.sh && \
+    echo 'done' >> /entrypoint-worker.sh && \
+    echo 'echo "✅ FastAPI está pronto!"' >> /entrypoint-worker.sh && \
+    echo 'echo "🚀 Iniciando Celery Worker (Queue: scraping)..."' >> /entrypoint-worker.sh && \
+    echo 'exec "$@"' >> /entrypoint-worker.sh && \
+    chmod +x /entrypoint-worker.sh
 
 # Cria usuário não-root para segurança
 RUN groupadd -r appuser && useradd -r -g appuser appuser

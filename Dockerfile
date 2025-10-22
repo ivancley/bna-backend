@@ -24,9 +24,27 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia código da aplicação
 COPY . .
 
-# Copia e configura entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Cria entrypoint diretamente no Dockerfile
+RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    echo 'set -e' >> /entrypoint.sh && \
+    echo 'echo "🔄 Aguardando PostgreSQL estar pronto..."' >> /entrypoint.sh && \
+    echo 'until PGPASSWORD=${POSTGRES_PASSWORD} psql -h postgres -U ${POSTGRES_USER:-bna_user} -d ${POSTGRES_DB:-bna_db} -c "\\q" 2>/dev/null; do' >> /entrypoint.sh && \
+    echo '  echo "⏳ PostgreSQL ainda não está pronto - aguardando..."' >> /entrypoint.sh && \
+    echo '  sleep 2' >> /entrypoint.sh && \
+    echo 'done' >> /entrypoint.sh && \
+    echo 'echo "✅ PostgreSQL está pronto!"' >> /entrypoint.sh && \
+    echo 'echo "🔄 Aguardando Redis estar pronto..."' >> /entrypoint.sh && \
+    echo 'until redis-cli -h redis ping 2>/dev/null | grep -q PONG; do' >> /entrypoint.sh && \
+    echo '  echo "⏳ Redis ainda não está pronto - aguardando..."' >> /entrypoint.sh && \
+    echo '  sleep 2' >> /entrypoint.sh && \
+    echo 'done' >> /entrypoint.sh && \
+    echo 'echo "✅ Redis está pronto!"' >> /entrypoint.sh && \
+    echo 'echo "🔄 Executando migrations do Alembic..."' >> /entrypoint.sh && \
+    echo 'alembic upgrade head' >> /entrypoint.sh && \
+    echo 'echo "✅ Migrations executadas com sucesso!"' >> /entrypoint.sh && \
+    echo 'echo "🚀 Iniciando aplicação FastAPI..."' >> /entrypoint.sh && \
+    echo 'exec "$@"' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
 # Cria usuário não-root para segurança
 RUN groupadd -r appuser && useradd -r -g appuser appuser
