@@ -182,7 +182,18 @@ docker-compose ps
    - Coolify gerencia automaticamente o mapeamento de portas
    - Evita conflitos com outras aplicações no servidor
 
-5. **❌ ERRO: "Oops something is not okay"**
+5. **❌ ERRO: "dependency failed to start: container app is unhealthy"**
+   
+   **Causa:** Health check da aplicação FastAPI está falhando durante a inicialização
+   
+   **Solução:**
+   - ✅ **RESOLVIDO**: Health check otimizado com mais tempo e tentativas
+   - Aumentado `start_period` para 90s (tempo para migrations)
+   - Aumentado `retries` para 5 tentativas
+   - Aumentado `timeout` para 15s
+   - Health check mais robusto com shell script
+
+6. **❌ ERRO: "Oops something is not okay"**
    
    **Possíveis causas e soluções:**
    - **Recursos insuficientes**: Aumente RAM/CPU do servidor Coolify
@@ -190,7 +201,7 @@ docker-compose ps
    - **Cache corrompido**: Limpe cache do Coolify
    - **Contexto de build grande**: Use o `.dockerignore` criado
 
-6. **❌ Build muito lento ou falha por timeout**
+7. **❌ Build muito lento ou falha por timeout**
    
    **Soluções:**
    - Use o `.dockerignore` otimizado para reduzir contexto
