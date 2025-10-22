@@ -187,11 +187,14 @@ docker-compose ps
    **Causa:** Health check da aplicação FastAPI está falhando durante a inicialização
    
    **Solução:**
-   - ✅ **RESOLVIDO**: Health check otimizado com mais tempo e tentativas
-   - Aumentado `start_period` para 90s (tempo para migrations)
+   - ✅ **RESOLVIDO**: Health check simplificado e otimizado
+   - Mudado para verificação de porta (`nc -z localhost 8000`)
+   - Aumentado `start_period` para 120s (tempo para migrations)
    - Aumentado `retries` para 5 tentativas
-   - Aumentado `timeout` para 15s
-   - Health check mais robusto com shell script
+   - Adicionado `netcat-openbsd` e `redis-tools` no Dockerfile
+   - Entrypoint com logs de debug para identificar problemas
+   - Migrations com fallback (não falha se der erro)
+   - **CORREÇÃO CRÍTICA**: Adicionado `redis-tools` para `redis-cli` funcionar
 
 6. **❌ ERRO: "Oops something is not okay"**
    

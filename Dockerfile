@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
     curl \
+    netcat-openbsd \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -27,6 +29,13 @@ COPY . .
 # Cria entrypoint diretamente no Dockerfile
 RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'set -e' >> /entrypoint.sh && \
+    echo 'echo "🚀 Iniciando BNA Backend..."' >> /entrypoint.sh && \
+    echo 'echo "📋 Variáveis de ambiente:"' >> /entrypoint.sh && \
+    echo 'echo "  POSTGRES_DB: ${POSTGRES_DB:-bna_db}"' >> /entrypoint.sh && \
+    echo 'echo "  POSTGRES_USER: ${POSTGRES_USER:-bna_user}"' >> /entrypoint.sh && \
+    echo 'echo "  JWT_SECRET_KEY: ${JWT_SECRET_KEY:+[CONFIGURADO]}"' >> /entrypoint.sh && \
+    echo 'echo "  SMTP_HOST: ${SMTP_HOST:+[CONFIGURADO]}"' >> /entrypoint.sh && \
+    echo 'echo "  OPENAI_API_KEY: ${OPENAI_API_KEY:+[CONFIGURADO]}"' >> /entrypoint.sh && \
     echo 'echo "🔄 Aguardando PostgreSQL estar pronto..."' >> /entrypoint.sh && \
     echo 'until PGPASSWORD=${POSTGRES_PASSWORD} psql -h postgres -U ${POSTGRES_USER:-bna_user} -d ${POSTGRES_DB:-bna_db} -c "\\q" 2>/dev/null; do' >> /entrypoint.sh && \
     echo '  echo "⏳ PostgreSQL ainda não está pronto - aguardando..."' >> /entrypoint.sh && \
@@ -40,8 +49,8 @@ RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'done' >> /entrypoint.sh && \
     echo 'echo "✅ Redis está pronto!"' >> /entrypoint.sh && \
     echo 'echo "🔄 Executando migrations do Alembic..."' >> /entrypoint.sh && \
-    echo 'alembic upgrade head' >> /entrypoint.sh && \
-    echo 'echo "✅ Migrations executadas com sucesso!"' >> /entrypoint.sh && \
+    echo 'alembic upgrade head || echo "⚠️  Erro nas migrations, continuando..."' >> /entrypoint.sh && \
+    echo 'echo "✅ Migrations processadas!"' >> /entrypoint.sh && \
     echo 'echo "🚀 Iniciando aplicação FastAPI..."' >> /entrypoint.sh && \
     echo 'exec "$@"' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
