@@ -138,21 +138,78 @@ docker-compose ps
 
 ### Problemas Comuns:
 
-1. **Migrations não executam**
+1. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
+   
+   **Causa:** O `.dockerignore` estava excluindo arquivos essenciais
+   
+   **Solução:**
+   - ✅ **RESOLVIDO**: O `.dockerignore` foi corrigido
+   - Use os arquivos Docker originais normalmente
+   - Configure no Coolify para usar `docker-compose.yml`
+
+2. **❌ ERRO: "Oops something is not okay"**
+   
+   **Possíveis causas e soluções:**
+   - **Recursos insuficientes**: Aumente RAM/CPU do servidor Coolify
+   - **Rede/DNS**: Verifique conectividade com Docker Hub
+   - **Cache corrompido**: Limpe cache do Coolify
+   - **Contexto de build grande**: Use o `.dockerignore` criado
+
+3. **❌ Build muito lento ou falha por timeout**
+   
+   **Soluções:**
+   - Use o `.dockerignore` otimizado para reduzir contexto
+   - Configure build externo via GitHub Actions
+   - Use imagens pré-buildadas se possível
+
+4. **Migrations não executam**
    - Verifique se o PostgreSQL está acessível
    - Confirme as variáveis de banco
 
-2. **Celery Worker não conecta**
+5. **Celery Worker não conecta**
    - Verifique se o Redis está funcionando
    - Confirme as variáveis REDIS_URL
 
-3. **Chrome não funciona no Worker**
+6. **Chrome não funciona no Worker**
    - O Dockerfile.worker inclui todas as dependências necessárias
    - Verifique se não há problemas de permissão
 
-4. **Health check falha**
+7. **Health check falha**
    - Aguarde o tempo de inicialização (40s)
    - Verifique se a porta 8000 está exposta
+
+### 🔧 Soluções Específicas para Coolify:
+
+#### Opção 1: Usar arquivos originais (RECOMENDADO)
+```bash
+# No Coolify, configure para usar:
+# Docker Compose File: docker-compose.yml
+# Build Context: . (diretório raiz)
+```
+
+#### Opção 2: Build externo via GitHub Actions
+```yaml
+# .github/workflows/build.yml
+name: Build and Push
+on:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build and push
+        run: |
+          docker build -f Dockerfile -t your-registry/app:latest .
+          docker push your-registry/app:latest
+```
+
+#### Opção 3: Configurações do Coolify
+- **Build Context**: Use apenas o diretório necessário
+- **Dockerfile**: Use `Dockerfile` (padrão)
+- **Resources**: Aumente limites de CPU/RAM
+- **Network**: Verifique conectividade com Docker Hub
 
 ## 📞 Suporte
 

@@ -1,56 +1,132 @@
-# Python
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker alternativos (mantém os originais)
+Dockerfile.coolify
+Dockerfile.worker.coolify
+docker-compose.coolify.yml
+
+# Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-*.egg-info/
-dist/
 build/
-.venv/
-venv/
-env/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# IDEs
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Environment
-#.env
-.env.local
-.env.*.local
-
-# Git
-.git/
-.gitignore
-
-# Tests
-tests/
-*.pytest_cache/
-.coverage
-htmlcov/
-
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # Logs
 *.log
 logs/
 
-# Temporary
-*.tmp
-temp/
-tmp/
+# Database
+*.db
+*.sqlite3
 
-# Docker
-Dockerfile*
-docker-compose*.yml
-.dockerignore
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
 
 # Documentation
 README.md
-docs/
+COOLIFY_DEPLOY.md
+*.md
+
+# Scripts de desenvolvimento (mantém apenas os essenciais)
+scripts/test_*
+scripts/teste_*
+
+# Test files
+test_*
+*_test.py
+tests/
+
+# Environment files
+.env*
+env.example
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
