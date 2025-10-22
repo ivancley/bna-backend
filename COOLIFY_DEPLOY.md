@@ -152,7 +152,17 @@ docker-compose ps
    - Use `docker-compose.yaml` no Coolify
    - Ou configure o caminho correto no Coolify
 
-2. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
+2. **❌ ERRO: "apt-key add" - Falha na instalação do Google Chrome**
+   
+   **Causa:** Comando `apt-key` depreciado nas versões mais recentes do Debian/Ubuntu
+   
+   **Solução:**
+   - ✅ **RESOLVIDO**: Método atualizado usando `gpg --dearmor`
+   - Chrome instalado com método moderno e seguro
+   - Compatível com versões recentes do sistema
+   - Funciona perfeitamente em servidores x86_64/amd64
+
+3. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
    
    **Causa:** Problema de contexto de build no Coolify
    
@@ -162,7 +172,7 @@ docker-compose ps
    - Funciona independente do contexto de build
    - Configure no Coolify para usar `docker-compose.yaml`
 
-3. **❌ ERRO: "Oops something is not okay"**
+4. **❌ ERRO: "Oops something is not okay"**
    
    **Possíveis causas e soluções:**
    - **Recursos insuficientes**: Aumente RAM/CPU do servidor Coolify
@@ -170,7 +180,7 @@ docker-compose ps
    - **Cache corrompido**: Limpe cache do Coolify
    - **Contexto de build grande**: Use o `.dockerignore` criado
 
-4. **❌ Build muito lento ou falha por timeout**
+5. **❌ Build muito lento ou falha por timeout**
    
    **Soluções:**
    - Use o `.dockerignore` otimizado para reduzir contexto
