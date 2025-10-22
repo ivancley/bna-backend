@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # PostgreSQL com pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: bna_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bna_db}
+      POSTGRES_USER: ${POSTGRES_USER:-bna_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bna_user} -d ${POSTGRES_DB:-bna_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bna_network
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: bna_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bna_network
+    restart: unless-stopped
+
+  # FastAPI Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bna_app
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bna_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bna_db}
+      
+      # Redis/Celery
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      
+      # JWT
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      
+      # SMTP
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FRONTEND_URL: ${SMTP_FRONTEND_URL}
+      
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-ada-002}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - bna_network
+    restart: unless-stopped
+
+  # Celery Worker (Queue: scraping)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: bna_worker
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-bna_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-bna_db}
+      
+      # Redis/Celery
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      
+      # OpenAI
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-ada-002}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    networks:
+      - bna_network
+    restart: unless-stopped
+
+  # Celery Flower (Monitoring) - Opcional para produção
+  flower:
+    image: mher/flower:2.0
+    container_name: bna_flower
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      - redis
+      - worker
+    networks:
+      - bna_network
+    restart: unless-stopped
+    profiles:
+      - monitoring  # Use: docker-compose --profile monitoring up
+
+networks:
+  bna_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

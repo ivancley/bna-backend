@@ -65,16 +65,21 @@ O projeto está configurado para usar o `docker-compose.yml` otimizado para prod
 1. Cole a URL do seu repositório Git
 2. Configure a branch (geralmente `main`)
 
-### Passo 3: Configurar Variáveis
+### Passo 3: Configurar Docker Compose
+1. **IMPORTANTE**: Configure o arquivo Docker Compose como `docker-compose.yaml`
+2. O Coolify procura por `.yaml` por padrão, não `.yml`
+3. Se necessário, renomeie seu arquivo ou configure o caminho correto
+
+### Passo 4: Configurar Variáveis
 1. Adicione todas as variáveis de ambiente listadas acima
 2. **IMPORTANTE**: Configure senhas seguras para produção
 
-### Passo 4: Configurar Volumes
+### Passo 5: Configurar Volumes
 Configure volumes persistentes para:
 - `postgres_data` - Dados do PostgreSQL
 - `redis_data` - Dados do Redis
 
-### Passo 5: Deploy
+### Passo 6: Deploy
 1. Clique em "Deploy"
 2. Aguarde o build e inicialização dos containers
 3. Verifique os logs para garantir que tudo está funcionando
@@ -138,7 +143,16 @@ docker-compose ps
 
 ### Problemas Comuns:
 
-1. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
+1. **❌ ERRO: "Docker Compose file not found at: /docker-compose.yaml"**
+   
+   **Causa:** Coolify procura por `docker-compose.yaml` mas o arquivo se chama `docker-compose.yml`
+   
+   **Solução:**
+   - ✅ **RESOLVIDO**: Arquivo `docker-compose.yaml` criado
+   - Use `docker-compose.yaml` no Coolify
+   - Ou configure o caminho correto no Coolify
+
+2. **❌ ERRO: "entrypoint.sh: not found" - Arquivo não encontrado durante build**
    
    **Causa:** Problema de contexto de build no Coolify
    
@@ -146,9 +160,9 @@ docker-compose ps
    - ✅ **RESOLVIDO**: Entrypoints criados diretamente nos Dockerfiles
    - Não depende mais de arquivos externos
    - Funciona independente do contexto de build
-   - Configure no Coolify para usar `docker-compose.yml`
+   - Configure no Coolify para usar `docker-compose.yaml`
 
-2. **❌ ERRO: "Oops something is not okay"**
+3. **❌ ERRO: "Oops something is not okay"**
    
    **Possíveis causas e soluções:**
    - **Recursos insuficientes**: Aumente RAM/CPU do servidor Coolify
@@ -156,7 +170,7 @@ docker-compose ps
    - **Cache corrompido**: Limpe cache do Coolify
    - **Contexto de build grande**: Use o `.dockerignore` criado
 
-3. **❌ Build muito lento ou falha por timeout**
+4. **❌ Build muito lento ou falha por timeout**
    
    **Soluções:**
    - Use o `.dockerignore` otimizado para reduzir contexto
@@ -184,7 +198,7 @@ docker-compose ps
 #### Opção 1: Usar arquivos originais (RECOMENDADO)
 ```bash
 # No Coolify, configure para usar:
-# Docker Compose File: docker-compose.yml
+# Docker Compose File: docker-compose.yaml
 # Build Context: . (diretório raiz)
 ```
 
@@ -212,10 +226,75 @@ jobs:
 - **Resources**: Aumente limites de CPU/RAM
 - **Network**: Verifique conectividade com Docker Hub
 
+## 🧪 Testes e Verificação
+
+### Teste Local (Desenvolvimento)
+
+```bash
+# Executar teste completo local
+./test-local.sh
+
+# Ou teste manual passo a passo:
+docker-compose up -d
+curl http://localhost:8000/health
+docker-compose logs -f
+```
+
+### Teste em Produção (Coolify)
+
+```bash
+# Teste básico de conectividade
+./test-production.sh https://seu-dominio.com
+
+# Ou teste manual:
+curl https://seu-dominio.com/health
+curl https://seu-dominio.com/docs
+```
+
+### Verificações Essenciais
+
+1. **Health Check**: `GET /health`
+   - Deve retornar status 200
+   - Deve conter timestamp atual
+
+2. **Documentação**: `GET /docs`
+   - Swagger UI deve carregar
+   - Endpoints devem estar listados
+
+3. **Banco de Dados**:
+   - Migrations executadas
+   - Conexão funcionando
+
+4. **Redis/Celery**:
+   - Worker conectado
+   - Tasks sendo processadas
+
+5. **Logs**:
+   - Sem erros críticos
+   - Serviços iniciando corretamente
+
+### Monitoramento Contínuo
+
+```bash
+# Verificar status dos containers
+docker-compose ps
+
+# Ver logs em tempo real
+docker-compose logs -f
+
+# Verificar recursos
+docker stats
+
+# Testar endpoints específicos
+curl -X GET https://seu-dominio.com/api/v1/usuario/
+curl -X POST https://seu-dominio.com/api/v1/conta/login
+```
+
 ## 📞 Suporte
 
 Se encontrar problemas:
 1. Verifique os logs no Coolify
-2. Teste localmente com `docker-compose up`
-3. Confirme todas as variáveis de ambiente
-4. Verifique se os volumes estão configurados corretamente
+2. Execute `./test-local.sh` para teste local
+3. Execute `./test-production.sh <URL>` para teste em produção
+4. Confirme todas as variáveis de ambiente
+5. Verifique se os volumes estão configurados corretamente
