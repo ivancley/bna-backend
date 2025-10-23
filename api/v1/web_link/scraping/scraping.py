@@ -2,18 +2,22 @@ from __future__ import annotations
 import os
 import random
 import re
+import shutil
+import stat
 import sys
+import tempfile
 import time
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+import uuid
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import TimeoutException, WebDriverException
 
 from api.v1._shared.custom_schemas import HeadingsData, OpenGraphData, PageContent
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,50 +35,19 @@ USER_AGENTS = [
 def _get_random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
-def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
-    """Cria driver em modo headless invisível, com JS habilitado e imagens desabilitadas via prefs."""
-    import tempfile
-    import os
-    import time
-    import random
-    
+def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")  # headless invisível moderno
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-software-rasterizer")
-    
-    # SOLUÇÃO ROBUSTA: Diretório único com PID + timestamp + random
-    pid = os.getpid()
-    timestamp = int(time.time() * 1000)
-    random_num = random.randint(1000, 9999)
-    temp_dir = f"/tmp/chrome_user_data_{pid}_{timestamp}_{random_num}"
-    
-    # Criar diretório com permissões específicas
-    os.makedirs(temp_dir, mode=0o755, exist_ok=True)
-    chrome_options.add_argument(f"--user-data-dir={temp_dir}")
-    
-    # Cache em diretório único também
-    cache_dir = f"/tmp/selenium_cache_{pid}_{timestamp}"
-    os.makedirs(cache_dir, mode=0o755, exist_ok=True)
-    chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
-    
-    # CORREÇÃO: Configurações adicionais para containers
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
-    chrome_options.add_argument("--disable-images")
-    # JAVASCRIPT MANTIDO HABILITADO - não desabilitar
-    chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-    chrome_options.add_argument("--remote-debugging-port=0")  # Porta aleatória para evitar conflitos
-    
-    # CORREÇÃO CRÍTICA: Desabilitar completamente o cache padrão do Selenium
     chrome_options.add_argument("--disable-background-networking")
     chrome_options.add_argument("--disable-background-timer-throttling")
     chrome_options.add_argument("--disable-renderer-backgrounding")
-    chrome_options.add_argument("--disable-backgrounding-occluded-windows")
     chrome_options.add_argument("--disable-client-side-phishing-detection")
     chrome_options.add_argument("--disable-sync")
     chrome_options.add_argument("--disable-translate")
@@ -82,64 +55,65 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
     chrome_options.add_argument("--disable-hang-monitor")
     chrome_options.add_argument("--disable-prompt-on-repost")
     chrome_options.add_argument("--disable-domain-reliability")
-
-    # User-Agent realista e aleatório
-    user_agent = _get_random_user_agent()
-    chrome_options.add_argument(f"--user-agent={user_agent}")
-
-    # Anti-detecção básica
+    chrome_options.add_argument("--no-first-run")
+    chrome_options.add_argument("--no-default-browser-check")
+    chrome_options.add_argument("--password-store=basic")
+    chrome_options.add_argument("--use-mock-keychain")
+    chrome_options.add_argument("--accept-language=pt-BR,pt;q=0.9,en;q=0.8")
+    chrome_options.add_argument("--log-level=3")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-
-    # Preferências para acelerar: desabilitar imagens (JS permanece ATIVADO)
-    chrome_prefs = {
-        "profile.managed_default_content_settings.images": 2,
-        "profile.default_content_setting_values.images": 2,
-        "profile.managed_default_content_settings.stylesheets": 1,  # CSS habilitado
-        "profile.managed_default_content_settings.javascript": 1,   # JS habilitado
-    }
-    chrome_options.add_experimental_option("prefs", chrome_prefs)
-
-    # Aceite de idioma e formato
-    chrome_options.add_argument("--accept-language=pt-BR,pt;q=0.9,en;q=0.8")
-
-    # Não aguarda carregamento total da página (controle manual via polling)
     chrome_options.page_load_strategy = "none"
 
-    # Logs silenciosos
-    chrome_options.add_argument("--log-level=3")
+    # UA randômico
+    chrome_options.add_argument(f"--user-agent={_get_random_user_agent()}")
+
+    # PERFIL 100% ÚNICO (atômico)
+    base_tmp = "/tmp/chrome"
+    os.makedirs(base_tmp, exist_ok=True)
+    os.chmod(base_tmp, 0o1777)  # sticky bit (como /tmp)
+    uid = str(uuid.uuid4())
+    user_data_dir = tempfile.mkdtemp(prefix=f"ud-{uid}-", dir=base_tmp)
+    cache_dir = tempfile.mkdtemp(prefix=f"cache-{uid}-", dir=base_tmp)
+
+    chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+    chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
+    chrome_options.add_argument(f"--profile-directory=Profile-{uid}")
+
+    # Evita disputa de porta (usa pipe em vez de TCP)
+    chrome_options.add_argument("--remote-debugging-pipe")
 
     driver = webdriver.Chrome(options=chrome_options)
-
-    # Tempo de carregamento por navegação (defensivo — usamos polling mesmo com page_load_strategy='none')
     driver.set_page_load_timeout(30)
 
-    # Mascaramento adicional
     try:
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR', 'pt', 'en']})")
+        driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['pt-BR','pt','en']})")
     except Exception:
         pass
 
-    return driver, temp_dir
+    return driver, user_data_dir, cache_dir
 
-def _cleanup_temp_dirs(temp_dir: str):
-    """Limpa diretórios temporários criados pelo Chrome."""
-    import shutil
-    import os
-    try:
-        # Remove o diretório principal
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        
-        # Remove também o diretório de cache relacionado
-        cache_dir = temp_dir.replace("chrome_user_data", "selenium_cache")
-        if os.path.exists(cache_dir):
-            shutil.rmtree(cache_dir, ignore_errors=True)
-            
-    except Exception:
-        pass
+def _cleanup_temp_dirs(*paths: str, retries: int = 3, delay: float = 0.2):
+    import shutil, time
+    for p in paths:
+        if not p:
+            continue
+        # remove locks se existirem
+        for lock in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            try:
+                lp = os.path.join(p, lock)
+                if os.path.exists(lp):
+                    os.remove(lp)
+            except Exception:
+                pass
+        for _ in range(retries):
+            try:
+                shutil.rmtree(p, ignore_errors=False)
+                break
+            except Exception:
+                time.sleep(delay)
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -278,20 +252,16 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
     last_exception = None
 
     for attempt in range(max_retries + 1):
-        driver = None
-        temp_dir = None
+        driver, user_dir, cache_dir = None, None, None
         try:
-            driver, temp_dir = _create_chrome_driver_headless()
+            driver, user_dir, cache_dir = _create_chrome_driver_headless()
             html, timed_out = _poll_until_ready_or_timeout(driver, url, max_seconds=timeout, poll_interval=0.25)
 
-            # Guarda o "melhor" HTML (por tamanho) entre tentativas
             if len(html) > len(best_html):
                 best_html = html
                 best_timed_out = timed_out
 
-            # Se já temos algo razoável, podemos encerrar cedo (por ex., body presente)
             if html and ("<html" in html.lower() or "<body" in html.lower()):
-                # se não estourou, ótimo — se estourou, mesmo assim retornaremos parcial
                 break
 
         except WebDriverException as e:
@@ -302,9 +272,7 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
                     driver.quit()
                 except Exception:
                     pass
-            # CORREÇÃO: Limpa diretórios temporários
-            if temp_dir:
-                _cleanup_temp_dirs(temp_dir)
+            _cleanup_temp_dirs(user_dir, cache_dir)
 
     if not best_html:
         # Se nada foi obtido, propaga última exceção ou gera erro claro
@@ -333,7 +301,6 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
         image=meta.get("og:image")
     )
 
-    # Retorna objeto PageContent — inclui timed_out=True/False conforme solicitado
     return PageContent(
         title=meta.get("title"),
         description=meta.get("description"),
@@ -342,5 +309,5 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
         headings=headings_data,
         text_full=main_text,
         og=og_data,
-        timed_out=best_timed_out  # <- NOVO CAMPO
+        timed_out=best_timed_out 
     )
