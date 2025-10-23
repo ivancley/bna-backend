@@ -36,6 +36,31 @@ def _get_random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
 def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
+    import subprocess
+    import signal
+    
+    # LIMPEZA RADICAL: Matar todos os processos Chrome/ChromeDriver
+    try:
+        # Mata processos Chrome
+        subprocess.run(["pkill", "-9", "-f", "chrome"], check=False, timeout=5)
+        subprocess.run(["pkill", "-9", "-f", "chromedriver"], check=False, timeout=5)
+        subprocess.run(["pkill", "-9", "-f", "google-chrome"], check=False, timeout=5)
+        
+        # Aguarda um pouco para garantir que os processos foram mortos
+        time.sleep(2)
+        
+        # Limpa diretórios temporários órfãos
+        import glob
+        for pattern in ["/tmp/chrome*", "/tmp/selenium*", "/tmp/chrome_user_data*"]:
+            for path in glob.glob(pattern):
+                try:
+                    shutil.rmtree(path, ignore_errors=True)
+                except Exception:
+                    pass
+                    
+    except Exception:
+        pass
+
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--window-size=1920,1080")
@@ -69,19 +94,28 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     # UA randômico
     chrome_options.add_argument(f"--user-agent={_get_random_user_agent()}")
 
-    # PERFIL 100% ÚNICO (atômico)
+    # SOLUÇÃO MAIS ROBUSTA: Usar PID + timestamp + random para garantir unicidade
+    pid = os.getpid()
+    timestamp = int(time.time() * 1000)
+    random_num = random.randint(10000, 99999)
+    
+    # Criar diretórios únicos com PID + timestamp + random
     base_tmp = "/tmp/chrome"
     os.makedirs(base_tmp, exist_ok=True)
-    os.chmod(base_tmp, 0o1777)  # sticky bit (como /tmp)
-    uid = str(uuid.uuid4())
-    user_data_dir = tempfile.mkdtemp(prefix=f"ud-{uid}-", dir=base_tmp)
-    cache_dir = tempfile.mkdtemp(prefix=f"cache-{uid}-", dir=base_tmp)
+    os.chmod(base_tmp, 0o1777)
+    
+    user_data_dir = f"{base_tmp}/ud_{pid}_{timestamp}_{random_num}"
+    cache_dir = f"{base_tmp}/cache_{pid}_{timestamp}_{random_num}"
+    
+    # Criar diretórios com permissões específicas
+    os.makedirs(user_data_dir, mode=0o755, exist_ok=True)
+    os.makedirs(cache_dir, mode=0o755, exist_ok=True)
 
     chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
-    chrome_options.add_argument(f"--profile-directory=Profile-{uid}")
+    chrome_options.add_argument(f"--profile-directory=Profile_{pid}_{timestamp}")
 
-    # Evita disputa de porta (usa pipe em vez de TCP)
+    # Evita disputa de porta
     chrome_options.add_argument("--remote-debugging-pipe")
 
     driver = webdriver.Chrome(options=chrome_options)
@@ -95,25 +129,42 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
 
     return driver, user_data_dir, cache_dir
 
-def _cleanup_temp_dirs(*paths: str, retries: int = 3, delay: float = 0.2):
-    import shutil, time
+def _cleanup_temp_dirs(*paths: str, retries: int = 5, delay: float = 0.5):
+    import shutil, time, subprocess
+    
     for p in paths:
         if not p:
             continue
-        # remove locks se existirem
-        for lock in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            
+        # Remove locks específicos do Chrome
+        lock_files = [
+            "SingletonLock", "SingletonCookie", "SingletonSocket",
+            "lockfile", "LOCK", "chrome_debug.log"
+        ]
+        
+        for lock in lock_files:
             try:
-                lp = os.path.join(p, lock)
-                if os.path.exists(lp):
-                    os.remove(lp)
+                lock_path = os.path.join(p, lock)
+                if os.path.exists(lock_path):
+                    os.remove(lock_path)
             except Exception:
                 pass
-        for _ in range(retries):
+        
+        # Tenta remover o diretório com múltiplas tentativas
+        for attempt in range(retries):
             try:
-                shutil.rmtree(p, ignore_errors=False)
-                break
-            except Exception:
-                time.sleep(delay)
+                if os.path.exists(p):
+                    shutil.rmtree(p, ignore_errors=False)
+                    break
+            except Exception as e:
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                else:
+                    # Última tentativa: força remoção
+                    try:
+                        subprocess.run(["rm", "-rf", p], check=False, timeout=10)
+                    except Exception:
+                        pass
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()

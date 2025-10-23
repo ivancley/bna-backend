@@ -117,7 +117,7 @@ services:
     networks:
       - bna_network
     restart: unless-stopped
-    command: ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping",  "--concurrency=1"]
+    command: ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping", "--concurrency=1", "--pool=prefork"]
 
   # Celery Flower (Monitoring) - Opcional para produção
   flower:

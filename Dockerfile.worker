@@ -79,6 +79,10 @@ COPY . .
 # Cria entrypoint do worker diretamente no Dockerfile
 RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'set -e' >> /entrypoint-worker.sh && \
+    echo 'echo "🧹 Limpando processos Chrome órfãos..."' >> /entrypoint-worker.sh && \
+    echo 'pkill -9 -f chrome 2>/dev/null || true' >> /entrypoint-worker.sh && \
+    echo 'pkill -9 -f chromedriver 2>/dev/null || true' >> /entrypoint-worker.sh && \
+    echo 'rm -rf /tmp/chrome* /tmp/selenium* 2>/dev/null || true' >> /entrypoint-worker.sh && \
     echo 'echo "🔄 Aguardando PostgreSQL estar pronto..."' >> /entrypoint-worker.sh && \
     echo 'until nc -z postgres 5432; do' >> /entrypoint-worker.sh && \
     echo '  echo "⏳ PostgreSQL ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
@@ -91,12 +95,6 @@ RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo '  sleep 2' >> /entrypoint-worker.sh && \
     echo 'done' >> /entrypoint-worker.sh && \
     echo 'echo "✅ Redis está pronto!"' >> /entrypoint-worker.sh && \
-    echo 'echo "🔄 Aguardando FastAPI estar pronto..."' >> /entrypoint-worker.sh && \
-    echo 'until curl -f http://app:8000/health 2>/dev/null; do' >> /entrypoint-worker.sh && \
-    echo '  echo "⏳ FastAPI ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
-    echo '  sleep 5' >> /entrypoint-worker.sh && \
-    echo 'done' >> /entrypoint-worker.sh && \
-    echo 'echo "✅ FastAPI está pronto!"' >> /entrypoint-worker.sh && \
     echo 'echo "🚀 Iniciando Celery Worker (Queue: scraping)..."' >> /entrypoint-worker.sh && \
     echo 'exec "$@"' >> /entrypoint-worker.sh && \
     chmod +x /entrypoint-worker.sh
@@ -106,8 +104,10 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
 
 # CORREÇÃO: Criar diretórios com permissões corretas para Selenium
-RUN mkdir -p /tmp/selenium_cache && chown -R appuser:appuser /tmp/selenium_cache
-RUN mkdir -p /home/appuser/.cache && chown -R appuser:appuser /home/appuser/.cache
+RUN mkdir -p /tmp/chrome && chmod 1777 /tmp/chrome
+RUN mkdir -p /tmp/selenium_cache && chmod 755 /tmp/selenium_cache
+RUN mkdir -p /home/appuser/.cache && chmod 755 /home/appuser/.cache
+RUN chown -R appuser:appuser /tmp/chrome /tmp/selenium_cache /home/appuser/.cache
 
 USER appuser
 
