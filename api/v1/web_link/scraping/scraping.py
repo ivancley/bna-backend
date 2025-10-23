@@ -31,8 +31,11 @@ USER_AGENTS = [
 def _get_random_user_agent() -> str:
     return random.choice(USER_AGENTS)
 
-def _create_chrome_driver_headless() -> webdriver.Chrome:
+def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
     """Cria driver em modo headless invisível, com JS habilitado e imagens desabilitadas via prefs."""
+    import tempfile
+    import os
+    
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")  # headless invisível moderno
     chrome_options.add_argument("--window-size=1920,1080")
@@ -40,6 +43,24 @@ def _create_chrome_driver_headless() -> webdriver.Chrome:
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-software-rasterizer")
+    
+    # CORREÇÃO: Criar diretório temporário único para cada instância
+    temp_dir = tempfile.mkdtemp(prefix="chrome_user_data_")
+    chrome_options.add_argument(f"--user-data-dir={temp_dir}")
+    
+    # CORREÇÃO: Configurar cache do Selenium em diretório com permissão
+    cache_dir = "/tmp/selenium_cache"
+    os.makedirs(cache_dir, exist_ok=True)
+    chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
+    
+    # CORREÇÃO: Configurações adicionais para containers
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--disable-images")
+    chrome_options.add_argument("--disable-javascript")  # Desabilitar JS para melhor performance
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+    chrome_options.add_argument("--remote-debugging-port=0")  # Porta aleatória para evitar conflitos
 
     # User-Agent realista e aleatório
     user_agent = _get_random_user_agent()
@@ -80,7 +101,15 @@ def _create_chrome_driver_headless() -> webdriver.Chrome:
     except Exception:
         pass
 
-    return driver
+    return driver, temp_dir
+
+def _cleanup_temp_dirs(temp_dir: str):
+    """Limpa diretórios temporários criados pelo Chrome."""
+    import shutil
+    try:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception:
+        pass
 
 def _clean_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
@@ -220,8 +249,9 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
 
     for attempt in range(max_retries + 1):
         driver = None
+        temp_dir = None
         try:
-            driver = _create_chrome_driver_headless()
+            driver, temp_dir = _create_chrome_driver_headless()
             html, timed_out = _poll_until_ready_or_timeout(driver, url, max_seconds=timeout, poll_interval=0.25)
 
             # Guarda o "melhor" HTML (por tamanho) entre tentativas
@@ -242,6 +272,9 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
                     driver.quit()
                 except Exception:
                     pass
+            # CORREÇÃO: Limpa diretórios temporários
+            if temp_dir:
+                _cleanup_temp_dirs(temp_dir)
 
     if not best_html:
         # Se nada foi obtido, propaga última exceção ou gera erro claro
