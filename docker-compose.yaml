@@ -73,7 +73,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       EMBED_MODEL: ${EMBED_MODEL:-text-embedding-ada-002}
     expose:
-      - "8000:8000"
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
