@@ -35,6 +35,8 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
     """Cria driver em modo headless invisível, com JS habilitado e imagens desabilitadas via prefs."""
     import tempfile
     import os
+    import time
+    import random
     
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")  # headless invisível moderno
@@ -44,24 +46,26 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-software-rasterizer")
     
-    # CORREÇÃO: Criar diretório temporário único para cada instância
-    temp_dir = tempfile.mkdtemp(prefix="chrome_user_data_")
+    # SOLUÇÃO ROBUSTA: Diretório único com PID + timestamp + random
+    pid = os.getpid()
+    timestamp = int(time.time() * 1000)
+    random_num = random.randint(1000, 9999)
+    temp_dir = f"/tmp/chrome_user_data_{pid}_{timestamp}_{random_num}"
+    
+    # Criar diretório com permissões específicas
+    os.makedirs(temp_dir, mode=0o755, exist_ok=True)
     chrome_options.add_argument(f"--user-data-dir={temp_dir}")
     
-    # CORREÇÃO: Configurar cache do Selenium em diretório com permissão
-    cache_dir = "/tmp/selenium_cache"
-    os.makedirs(cache_dir, exist_ok=True)
+    # Cache em diretório único também
+    cache_dir = f"/tmp/selenium_cache_{pid}_{timestamp}"
+    os.makedirs(cache_dir, mode=0o755, exist_ok=True)
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
-    
-    # CORREÇÃO ADICIONAL: Configurar variáveis de ambiente para Selenium
-    os.environ['SELENIUM_CACHE_DIR'] = cache_dir
-    os.environ['SELENIUM_USER_DATA_DIR'] = temp_dir
     
     # CORREÇÃO: Configurações adicionais para containers
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
     chrome_options.add_argument("--disable-images")
-    #chrome_options.add_argument("--disable-javascript")  # Desabilitar JS para melhor performance
+    # JAVASCRIPT MANTIDO HABILITADO - não desabilitar
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--disable-features=VizDisplayCompositor")
     chrome_options.add_argument("--remote-debugging-port=0")  # Porta aleatória para evitar conflitos
@@ -123,8 +127,17 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
 def _cleanup_temp_dirs(temp_dir: str):
     """Limpa diretórios temporários criados pelo Chrome."""
     import shutil
+    import os
     try:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        # Remove o diretório principal
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        # Remove também o diretório de cache relacionado
+        cache_dir = temp_dir.replace("chrome_user_data", "selenium_cache")
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            
     except Exception:
         pass
 
