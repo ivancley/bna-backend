@@ -118,13 +118,13 @@ services:
       - bna_network
     restart: unless-stopped
 
-  # Celery Flower (Monitoring) - Opcional para produção
+  # Celery Flower (Monitoring)
   flower:
     image: mher/flower:2.0
     container_name: bna_flower
     command: celery --broker=redis://redis:6379/0 flower --port=5555
-    ports:
-      - "5555:5555"
+    expose:
+      - "5555"
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
@@ -134,8 +134,6 @@ services:
     networks:
       - bna_network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Use: docker-compose --profile monitoring up
 
 networks:
   bna_network:
