@@ -117,6 +117,7 @@ services:
     networks:
       - bna_network
     restart: unless-stopped
+    command: ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping",  "--concurrency=1"]
 
   # Celery Flower (Monitoring) - Opcional para produção
   flower:
@@ -134,8 +135,6 @@ services:
     networks:
       - bna_network
     restart: unless-stopped
-    profiles:
-      - monitoring  # Use: docker-compose --profile monitoring up
 
 networks:
   bna_network:
