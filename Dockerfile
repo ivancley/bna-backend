@@ -52,6 +52,8 @@ RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'alembic upgrade head || echo "⚠️  Erro nas migrations, continuando..."' >> /entrypoint.sh && \
     echo 'echo "✅ Migrations processadas!"' >> /entrypoint.sh && \
     echo 'echo "🚀 Iniciando aplicação FastAPI..."' >> /entrypoint.sh && \
+    echo 'echo "📡 Servidor será iniciado em: http://0.0.0.0:8000"' >> /entrypoint.sh && \
+    echo 'echo "📚 Documentação disponível em: http://0.0.0.0:8000/docs"' >> /entrypoint.sh && \
     echo 'exec "$@"' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
