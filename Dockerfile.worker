@@ -115,4 +115,4 @@ USER appuser
 ENTRYPOINT ["/entrypoint-worker.sh"]
 
 # Comando padrão: inicia Celery worker apenas para queue scraping
-CMD ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping"]
+CMD ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping", "--concurrency=1"]
