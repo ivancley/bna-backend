@@ -14,11 +14,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bna_user} -d ${POSTGRES_DB:-bna_db}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - bna_network
     restart: unless-stopped
@@ -27,16 +22,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: bna_redis
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - bna_network
     restart: unless-stopped
@@ -75,16 +65,8 @@ services:
     expose:
       - "8000"
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+      - postgres
+      - redis
     networks:
       - bna_network
     restart: unless-stopped
@@ -109,18 +91,14 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       EMBED_MODEL: ${EMBED_MODEL:-text-embedding-ada-002}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      #app:
-      #  condition: service_healthy
+      - postgres
+      - redis
     networks:
       - bna_network
     restart: unless-stopped
     command: ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping", "--concurrency=1", "--pool=prefork"]
 
-  # Celery Flower (Monitoring) - Opcional para produção
+  # Celery Flower (Monitoring)
   flower:
     image: mher/flower:2.0
     container_name: bna_flower
