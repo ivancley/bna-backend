@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 # Configurações
 MODEL = "gpt-4o-mini"
 MAX_INPUT_CHARS = 12000  # ~3000 tokens (limite seguro para contexto)
-MAX_OUTPUT_TOKENS = 200  # ~150 palavras em português
+MAX_OUTPUT_TOKENS = 400  # ~150 palavras em português
  # Tamanho de cada chunk para resumos em etapas
 CHUNK_SIZE = 10000 
 OPENAI_API_KEY = config("OPENAI_API_KEY")

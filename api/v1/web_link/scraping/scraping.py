@@ -53,14 +53,31 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str]:
     os.makedirs(cache_dir, exist_ok=True)
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
     
+    # CORREÇÃO ADICIONAL: Configurar variáveis de ambiente para Selenium
+    os.environ['SELENIUM_CACHE_DIR'] = cache_dir
+    os.environ['SELENIUM_USER_DATA_DIR'] = temp_dir
+    
     # CORREÇÃO: Configurações adicionais para containers
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-plugins")
     chrome_options.add_argument("--disable-images")
-    chrome_options.add_argument("--disable-javascript")  # Desabilitar JS para melhor performance
+    #chrome_options.add_argument("--disable-javascript")  # Desabilitar JS para melhor performance
     chrome_options.add_argument("--disable-web-security")
     chrome_options.add_argument("--disable-features=VizDisplayCompositor")
     chrome_options.add_argument("--remote-debugging-port=0")  # Porta aleatória para evitar conflitos
+    
+    # CORREÇÃO CRÍTICA: Desabilitar completamente o cache padrão do Selenium
+    chrome_options.add_argument("--disable-background-networking")
+    chrome_options.add_argument("--disable-background-timer-throttling")
+    chrome_options.add_argument("--disable-renderer-backgrounding")
+    chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+    chrome_options.add_argument("--disable-client-side-phishing-detection")
+    chrome_options.add_argument("--disable-sync")
+    chrome_options.add_argument("--disable-translate")
+    chrome_options.add_argument("--disable-ipc-flooding-protection")
+    chrome_options.add_argument("--disable-hang-monitor")
+    chrome_options.add_argument("--disable-prompt-on-repost")
+    chrome_options.add_argument("--disable-domain-reliability")
 
     # User-Agent realista e aleatório
     user_agent = _get_random_user_agent()

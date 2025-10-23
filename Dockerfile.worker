@@ -104,6 +104,11 @@ RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
 # Cria usuário não-root para segurança
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN chown -R appuser:appuser /app
+
+# CORREÇÃO: Criar diretórios com permissões corretas para Selenium
+RUN mkdir -p /tmp/selenium_cache && chown -R appuser:appuser /tmp/selenium_cache
+RUN mkdir -p /home/appuser/.cache && chown -R appuser:appuser /home/appuser/.cache
+
 USER appuser
 
 # Usa entrypoint para aguardar serviços
