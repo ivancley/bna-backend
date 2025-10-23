@@ -50,7 +50,10 @@ RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'exec "$@"' >> /entrypoint-worker.sh && \
     chmod +x /entrypoint-worker.sh
 
-# Cria usuário não-root para segurança (a imagem já tem selenium user)
+# Verifica qual usuário existe na imagem e cria se necessário
+RUN id selenium 2>/dev/null || (groupadd -r selenium && useradd -r -g selenium selenium)
+
+# Cria usuário não-root para segurança
 RUN chown -R selenium:selenium /app
 
 # CORREÇÃO: Criar diretórios com permissões corretas para Selenium
