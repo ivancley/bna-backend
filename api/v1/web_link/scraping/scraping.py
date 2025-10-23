@@ -37,7 +37,6 @@ def _get_random_user_agent() -> str:
 
 def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     import subprocess
-    import signal
     
     # LIMPEZA RADICAL: Matar todos os processos Chrome/ChromeDriver
     try:
@@ -94,26 +93,13 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     # UA randômico
     chrome_options.add_argument(f"--user-agent={_get_random_user_agent()}")
 
-    # SOLUÇÃO MAIS ROBUSTA: Usar PID + timestamp + random para garantir unicidade
-    pid = os.getpid()
-    timestamp = int(time.time() * 1000)
-    random_num = random.randint(10000, 99999)
-    
-    # Criar diretórios únicos com PID + timestamp + random
-    base_tmp = "/tmp/chrome"
-    os.makedirs(base_tmp, exist_ok=True)
-    os.chmod(base_tmp, 0o1777)
-    
-    user_data_dir = f"{base_tmp}/ud_{pid}_{timestamp}_{random_num}"
-    cache_dir = f"{base_tmp}/cache_{pid}_{timestamp}_{random_num}"
-    
-    # Criar diretórios com permissões específicas
-    os.makedirs(user_data_dir, mode=0o755, exist_ok=True)
-    os.makedirs(cache_dir, mode=0o755, exist_ok=True)
+    # SOLUÇÃO SIMPLIFICADA: Usar diretórios temporários únicos
+    import tempfile
+    user_data_dir = tempfile.mkdtemp(prefix="chrome_ud_")
+    cache_dir = tempfile.mkdtemp(prefix="chrome_cache_")
 
     chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
-    chrome_options.add_argument(f"--profile-directory=Profile_{pid}_{timestamp}")
 
     # Evita disputa de porta
     chrome_options.add_argument("--remote-debugging-pipe")
