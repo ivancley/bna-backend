@@ -93,13 +93,21 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     # UA randômico
     chrome_options.add_argument(f"--user-agent={_get_random_user_agent()}")
 
-    # SOLUÇÃO SIMPLIFICADA: Usar diretórios temporários únicos
+    # SOLUÇÃO RADICAL: NÃO usar --user-data-dir
+    # Em vez disso, usar apenas cache temporário
     import tempfile
-    user_data_dir = tempfile.mkdtemp(prefix="chrome_ud_")
     cache_dir = tempfile.mkdtemp(prefix="chrome_cache_")
-
-    chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
+    
+    # Configurações para evitar conflitos de sessão
+    chrome_options.add_argument("--disable-session-crashed-bubble")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--disable-notifications")
+    chrome_options.add_argument("--disable-popup-blocking")
+    chrome_options.add_argument("--disable-default-apps")
+    chrome_options.add_argument("--disable-web-security")
+    chrome_options.add_argument("--allow-running-insecure-content")
+    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
 
     # Evita disputa de porta
     chrome_options.add_argument("--remote-debugging-pipe")
@@ -113,7 +121,7 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     except Exception:
         pass
 
-    return driver, user_data_dir, cache_dir
+    return driver, None, cache_dir
 
 def _cleanup_temp_dirs(*paths: str, retries: int = 5, delay: float = 0.5):
     import shutil, time, subprocess
@@ -289,9 +297,9 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
     last_exception = None
 
     for attempt in range(max_retries + 1):
-        driver, user_dir, cache_dir = None, None, None
+        driver, cache_dir = None, None
         try:
-            driver, user_dir, cache_dir = _create_chrome_driver_headless()
+            driver, _, cache_dir = _create_chrome_driver_headless()
             html, timed_out = _poll_until_ready_or_timeout(driver, url, max_seconds=timeout, poll_interval=0.25)
 
             if len(html) > len(best_html):
@@ -309,7 +317,7 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
                     driver.quit()
                 except Exception:
                     pass
-            _cleanup_temp_dirs(user_dir, cache_dir)
+            _cleanup_temp_dirs(cache_dir)
 
     if not best_html:
         # Se nada foi obtido, propaga última exceção ou gera erro claro
