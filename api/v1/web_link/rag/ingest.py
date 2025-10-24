@@ -7,8 +7,8 @@ from api.v1._shared.custom_schemas import PageContent
 from decouple import config
 from textwrap import wrap
 
-MAX_CHARS = 1200 
-MIN_CHARS_TO_PROCESS = 50
+MAX_CHARS = 2500  # Aumentado para preservar mais contexto
+MIN_CHARS_TO_PROCESS = 100  # Aumentado para evitar chunks muito pequenos
 # Otimização - N textos enviados por vez para o OpenAI
 BATCH_SIZE = 64 
 
@@ -38,26 +38,78 @@ def analyze_table(db: Session):
 def _chunk_text(text: str, max_chars: int = MAX_CHARS) -> List[str]:
     """
     Divide texto em chunks respeitando o limite de caracteres.
-    Mantém palavras inteiras (não quebra no meio).
+    Mantém palavras inteiras (não quebra no meio) e preserva contexto.
     """
     if len(text) <= max_chars:
         return [text.strip()]
     
-    chunks = wrap(text, max_chars, break_long_words=False, replace_whitespace=False)
-    return [c.strip() for c in chunks if c.strip()]
+    # Primeiro tenta dividir por parágrafos duplos
+    paragraphs = text.split('\n\n')
+    chunks = []
+    current_chunk = ""
+    
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+            
+        # Se o parágrafo sozinho já é muito grande, divide ele
+        if len(para) > max_chars:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+                current_chunk = ""
+            
+            # Divide o parágrafo grande usando wrap
+            para_chunks = wrap(para, max_chars, break_long_words=False, replace_whitespace=False)
+            chunks.extend([c.strip() for c in para_chunks if c.strip()])
+        else:
+            # Se adicionar este parágrafo exceder o limite, finaliza o chunk atual
+            if current_chunk and len(current_chunk) + len(para) + 2 > max_chars:
+                chunks.append(current_chunk.strip())
+                current_chunk = para
+            else:
+                current_chunk += "\n\n" + para if current_chunk else para
+    
+    # Adiciona o último chunk se houver
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+    
+    return [c for c in chunks if len(c) >= MIN_CHARS_TO_PROCESS]
+
+
+def _filter_navigation_content(text: str) -> str:
+    """
+    Remove conteúdo de navegação e menus do texto, mantendo conteúdo técnico do produto.
+    """
+    lines = text.split('\n')
+    filtered_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Mantém linhas com conteúdo substancial (mais de 50 caracteres)
+        if len(line) > 50:
+            filtered_lines.append(line)
+    
+    return '\n'.join(filtered_lines)
 
 
 def _extract_paragraphs_with_headings(page_content: PageContent) -> List[Tuple[str, str]]:
     """
     Extrai parágrafos do text_full e associa com headings quando possível.
+    Filtra conteúdo de navegação para focar no conteúdo real do produto.
     
     Retorna lista de (heading, paragraph).
     Se não houver heading correspondente, usa o primeiro h1 ou título da página.
     """
     items: List[Tuple[str, str]] = []
     
-    # Pega o texto completo
+    # Pega o texto completo e filtra navegação
     text_full = page_content.text_full or ""
+    text_full = _filter_navigation_content(text_full)
+    
     if len(text_full) < MIN_CHARS_TO_PROCESS:
         return []
     
@@ -94,7 +146,7 @@ def _extract_paragraphs_with_headings(page_content: PageContent) -> List[Tuple[s
                 heading_found = True
                 break
         
-        if para:  # Só adiciona se tiver conteúdo
+        if para and len(para) >= MIN_CHARS_TO_PROCESS:  # Só adiciona se tiver conteúdo suficiente
             items.append((current_heading, para))
     
     return items

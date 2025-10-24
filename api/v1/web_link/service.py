@@ -75,17 +75,17 @@ class WebLinkService(BaseService[WebLink, WebLinkCreate, WebLinkUpdate, WebLinkG
             db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno no servidor ao criar {self.entity_name}.")
 
+        # IA Gerou AQUI !!!
         # Dispara task assíncrona de scraping se houver URL
-        if db_model.weblink:
-            try:
-                from api.v1.web_link.celery.tasks import scrape_url_task
-                scrape_url_task.delay(str(db_model.id), db_model.weblink)
-                logger.info(f"Task de scraping disparada para WebLink ID: {db_model.id}")
-            except Exception as e:
-                # Apenas loga erro, não interrompe a criação do WebLink
-                logger.error(f"Erro ao disparar task de scraping para WebLink ID {db_model.id}: {e}")
-                print(f"[AVISO] Não foi possível disparar task de scraping: {e}")
-
+        #if db_model.weblink:
+        #    try:
+        #        from api.v1.web_link.celery.tasks import scrape_url_task
+        #        scrape_url_task.delay(str(db_model.id), db_model.weblink)
+        #        logger.info(f"Task de scraping disparada para WebLink ID: {db_model.id}")
+        #    except Exception as e:
+        #        # Apenas loga erro, não interrompe a criação do WebLink
+        #        logger.error(f"Erro ao disparar task de scraping para WebLink ID {db_model.id}: {e}")
+        #        print(f"[AVISO] Não foi possível disparar task de scraping: {e}")
         return db_model
 
     def update(

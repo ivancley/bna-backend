@@ -289,8 +289,6 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
         WebDriverException em falhas críticas do WebDriver após as tentativas.
         ValueError se nenhum HTML válido for obtido.
     """
-    # Garanta no máx. 2 tentativas
-    max_retries = min(max_retries, 1)
 
     best_html = ""
     best_timed_out = False

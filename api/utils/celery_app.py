@@ -36,7 +36,7 @@ celery_app.conf.update(
         'api.utils.tasks.email_tasks.*': {'queue': 'email'},
         'api.utils.tasks.ia_tasks.*': {'queue': 'ia'},
         'api.v1.web_link.celery.tasks.*': {'queue': 'scraping'},
-        'api.v1.web_link.celery.tasks.scrape_url_task': {'queue': 'scraping'},  # Rota específica
+        'api.v1.web_link.celery.tasks.scrape_url_task': {'queue': 'scraping'}, 
     },
     
     # Rate limiting

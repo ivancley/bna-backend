@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 MODEL = "gpt-4o-mini"
 MAX_INPUT_CHARS = 12000  # ~3000 tokens (limite seguro para contexto)
 MAX_OUTPUT_TOKENS = 400  # ~150 palavras em português
- # Tamanho de cada chunk para resumos em etapas
+TEMPERATURE = 0.3
 CHUNK_SIZE = 10000 
 OPENAI_API_KEY = config("OPENAI_API_KEY")
 
@@ -54,7 +54,7 @@ def _summarize_chunk(client: OpenAI, text: str) -> str:
                 {"role": "user", "content": f"Resuma o seguinte texto:\n\n{text}"}
             ],
             max_tokens=MAX_OUTPUT_TOKENS,
-            temperature=0.3,  # Mais determinístico
+            temperature=TEMPERATURE,
         )
         
         summary = response.choices[0].message.content.strip()
@@ -119,7 +119,7 @@ def generate_summary(
     
     # Resume cada chunk
     chunk_summaries = []
-    for idx, chunk in enumerate(chunks[:3]):  # Limita a 3 chunks para controlar custo
+    for idx, chunk in enumerate(chunks[:3]):
         try:
             logger.info(f"Resumindo chunk {idx+1}/{min(len(chunks), 3)}")
             summary = _summarize_chunk(client, chunk)
@@ -134,11 +134,12 @@ def generate_summary(
         fallback = _truncate_text(text_full, 500)
         return fallback
     
-    # Se conseguiu resumir, faz resumo final dos resumos
     combined_summaries = "\n\n".join(chunk_summaries)
     
-    if len(combined_summaries) <= MAX_INPUT_CHARS:
-        # Resumo final
+    # Gerado pela IA
+    # if len(combined_summaries) <= MAX_INPUT_CHARS:
+    #
+    if len(combined_summaries) > 1:
         try:
             final_context = f"Título: {title}\n\n" if title else ""
             final_context += f"Resumos parciais do conteúdo:\n\n{combined_summaries}"
@@ -157,8 +158,7 @@ def generate_summary(
             
         except Exception as e:
             logger.error(f"Erro ao gerar resumo final: {e}")
-            # Retorna o primeiro resumo como fallback
             return chunk_summaries[0]
     
     # Se ainda for muito grande, retorna o primeiro resumo
-    return chunk_summaries[0]
+    return chunk_summaries[0] 

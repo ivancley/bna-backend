@@ -10,9 +10,11 @@ from sqlalchemy.orm import Session
 from api.utils.celery_app import celery_app
 from api.utils.db_services import get_db
 from api.v1._database.models import WebLink
+from api.v1._shared.schemas import WebLinkUpdate
 from api.v1.web_link.ia.summarize import generate_summary
 from api.v1.web_link.rag.ingest import ingest_page_content
-from api.v1.web_link.scraping.scraping import url_to_json 
+from api.v1.web_link.scraping.scraping import url_to_json
+from api.v1.web_link.service import WebLinkService
 
 
 logger = logging.getLogger(__name__)
@@ -72,12 +74,25 @@ def scrape_url_task(self, weblink_id: str, url: str) -> Optional[dict]:
         print(summary)
         print("="*80 + "\n")
         
-        # 3) Atualiza o WebLink no banco com resumo e título
-        db.query(WebLink).filter(WebLink.id == UUID(weblink_id)).update({
-            "title": page_content.title,
-            "resumo": summary
-        })
-        db.commit()
+        # 3) Atualiza o WebLink no banco com resumo e título usando o service
+        # IA Gerou AQUI !!!
+        #db.query(WebLink).filter(WebLink.id == UUID(weblink_id)).update({
+        #    "title": page_content.title,
+        #    "resumo": summary
+        #})
+        #db.commit()
+        #
+        
+        update_data = WebLinkUpdate(
+            title=page_content.title,
+            resumo=summary
+        )
+        
+        WebLinkService().update(
+            db=db,
+            id=UUID(weblink_id),
+            data=update_data
+        )
         
         # 4) Ingere no pgvector para RAG
         ingest_result = ingest_page_content(

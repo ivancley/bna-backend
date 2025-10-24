@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, List, Literal
 from sqlalchemy.orm import Session
 from uuid import UUID
+import logging
 
 from api.v1._database.models import WebLink
 from api.v1._shared.base_use_case import BaseUseCase
@@ -8,6 +9,8 @@ from api.v1._shared.schemas import WebLinkCreate, WebLinkUpdate, WebLinkView
 from api.v1.web_link.mapper import map_list_to_web_link_view, map_to_web_link_view
 from api.v1.web_link.service import WebLinkService
 from api.utils.permissions import has_permission
+
+logger = logging.getLogger(__name__)
 
 class WebLinkUseCase(BaseUseCase[WebLink, WebLinkCreate, WebLinkUpdate, WebLinkView]):
     """
@@ -94,3 +97,39 @@ class WebLinkUseCase(BaseUseCase[WebLink, WebLinkCreate, WebLinkUpdate, WebLinkV
             select_fields=select_fields,
             user_info=user_info_for_base
         )
+
+    async def create(
+        self,
+        db: Session,
+        data: WebLinkCreate,
+        user_info: Optional[Any] = None
+    ) -> WebLinkView:
+        """
+        Create a new WebLink and trigger scraping task if URL is provided.
+        
+        This method extends the base create functionality by adding the business logic
+        to dispatch a Celery task for web scraping when a URL is provided.
+        
+        Args:
+            db: Database session
+            data: Data for creating the WebLink
+            user_info: Optional Usuario object from authentication
+            
+        Returns:
+            View model of the created WebLink
+        """
+        # Chama o método base para criar o WebLink
+        created_model = await super().create(db=db, data=data, user_info=user_info)
+        
+        # Dispara task assíncrona de scraping se houver URL
+        if created_model.weblink:
+            try:
+                from api.v1.web_link.celery.tasks import scrape_url_task
+                scrape_url_task.delay(str(created_model.id), created_model.weblink)
+                logger.info(f"Task de scraping disparada para WebLink ID: {created_model.id}")
+            except Exception as e:
+                # Apenas loga erro, não interrompe a criação do WebLink
+                logger.error(f"Erro ao disparar task de scraping para WebLink ID {created_model.id}: {e}")
+                print(f"[AVISO] Não foi possível disparar task de scraping: {e}")
+        
+        return created_model
