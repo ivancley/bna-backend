@@ -1,62 +1,70 @@
-# Usar imagem Ubuntu 22.04 como base
 FROM ubuntu:22.04
 
-# Define diretório de trabalho
+# Diretório de trabalho
 WORKDIR /app
 
-# Evita prompts do apt
-ENV DEBIAN_FRONTEND=noninteractive
+# Evitar prompts e preferir wheels no pip
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_PREFER_BINARY=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# --- 1) Sistema e ferramentas necessárias ---
+# --- 1) Sistema, libs do Chrome, toolchain e Python ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash ca-certificates curl wget unzip gnupg \
     netcat-openbsd \
-    # libs p/ Chrome
+    # libs necessárias p/ Chrome
     libasound2 libatk1.0-0 libcairo2 libcups2 libfontconfig1 \
     libgdk-pixbuf2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libxss1 \
     fonts-liberation xdg-utils \
-    # toolchain (se algum pacote Python cair para build)
+    # drivers gráficos (evitam erros de runtime)
+    libx11-xcb1 libxcb-dri3-0 libxcb-present0 libxcb-sync1 libxcb-xfixes0 libxshmfence1 \
+    libedit2 libgbm1 libelf1 libdrm2 libdrm-amdgpu1 libdrm-common \
+    # toolchain (caso algum pacote Python precise compilar)
     build-essential g++ gfortran \
-    # Python 3 + pip
+    # Python 3 + pip + headers
     python3 python3-pip python3-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# --- 2) Preferir wheels e atualizar pip ---
-ENV PIP_PREFER_BINARY=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+# Atualiza pip e ferramentas de build Python
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# --- 3) Instalar Google Chrome (canal estável) ---
+# --- 2) Instalar Google Chrome (stable) ---
 RUN wget -q -O /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
  && apt-get update && apt-get install -y /tmp/google-chrome.deb \
  && rm /tmp/google-chrome.deb \
  && rm -rf /var/lib/apt/lists/*
 
-# Verifica instalação do Chrome
+# Verifica versão do Chrome (exibe no build log)
 RUN google-chrome --version
 
-# --- 4) Instalar ChromeDriver compatível com a major do Chrome ---
-RUN CHROME_MAJOR=$(google-chrome --version | sed -E 's/.* ([0-9]+)\..*/\1/') \
- && echo "Chrome major: $CHROME_MAJOR" \
- && CDVER=$(curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR}) \
- && wget -q -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CDVER}/chromedriver_linux64.zip" \
- && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
- && chmod +x /usr/local/bin/chromedriver \
- && rm /tmp/chromedriver.zip
+# --- 3) ChromeDriver via Chrome for Testing (mesma versão do Chrome) ---
+# OBS: não usar mais chromedriver.storage.googleapis.com/LATEST_RELEASE_* (legado)
+RUN set -eux; \
+  CHROME_VERSION="$(google-chrome --version | awk '{print $3}')" ; \
+  OS=linux64 ; \
+  BASE_URL="https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${OS}" ; \
+  echo "Chrome: ${CHROME_VERSION}  |  Baixando: ${BASE_URL}/chromedriver-${OS}.zip" ; \
+  wget -q -O /tmp/chromedriver.zip "${BASE_URL}/chromedriver-${OS}.zip" ; \
+  unzip -q /tmp/chromedriver.zip -d /opt/chromedriver ; \
+  mv /opt/chromedriver/chromedriver-${OS}/chromedriver /usr/local/bin/chromedriver ; \
+  chmod +x /usr/local/bin/chromedriver ; \
+  rm -rf /opt/chromedriver /tmp/chromedriver.zip
 
-# --- 5) Dependências Python do projeto ---
+# --- 4) Dependências Python do projeto ---
 COPY requirements.txt .
 
-# Corrige pin inexistente do numpy (2.3.4 não existe)
+# Corrige pin inexistente do numpy (2.3.4 não existe no PyPI)
 RUN sed -i 's/^numpy==2\.3\.4$/numpy==2.2.6/' requirements.txt
 
-# Instala requirements preferindo wheels
+# Instala requirements (preferindo wheels)
 RUN python3 -m pip install --upgrade pip setuptools wheel \
  && pip3 install --only-binary=:all: --no-cache-dir -r requirements.txt
 
-# --- 6) Código da aplicação ---
+# --- 5) Código da aplicação ---
 COPY . .
 
-# --- 7) Entrypoint do worker ---
+# --- 6) Entrypoint do worker (aguarda Postgres e Redis) ---
 RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'set -e' >> /entrypoint-worker.sh && \
     echo 'echo "🧹 Limpando processos Chrome órfãos..."' >> /entrypoint-worker.sh && \
@@ -73,7 +81,7 @@ RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'exec "$@"' >> /entrypoint-worker.sh && \
     chmod +x /entrypoint-worker.sh
 
-# --- 8) Usuário não-root ---
+# --- 7) Usuário não-root + permissões e caches do Selenium/Chrome ---
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
  && mkdir -p /tmp/chrome /tmp/selenium_cache /home/appuser/.cache \
  && chmod 1777 /tmp/chrome \
@@ -82,7 +90,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser \
 
 USER appuser
 
+# Entrypoint aguarda serviços e delega ao comando
 ENTRYPOINT ["/entrypoint-worker.sh"]
 
-# Remova o ']' extra aqui
+# Comando padrão: Celery worker (queue scraping)
 CMD ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping", "--concurrency=1", "--pool=prefork"]
