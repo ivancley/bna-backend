@@ -1,5 +1,5 @@
 # Usar imagem Python com Chrome e ChromeDriver pré-instalados
-FROM bluet/python-selenium-chrome
+FROM joyzoursky/python-chromedriver:3.9-selenium
 
 # Define diretório de trabalho
 WORKDIR /app
@@ -21,10 +21,9 @@ RUN apt-get update && apt-get install -y \
 # Verifica instalação do Chrome (já vem instalado)
 RUN google-chrome --version
 
-# Atualiza pip e instala dependências Python
+# Copia requirements e instala dependências Python
 COPY requirements.txt .
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt --ignore-installed selenium
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia código da aplicação
 COPY . .
