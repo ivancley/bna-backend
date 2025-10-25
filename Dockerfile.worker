@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Instala dependências do sistema necessárias
+# Instala apenas dependências do sistema que não vêm com a imagem base
 RUN apt-get update && apt-get install -y \
     gcc \
     postgresql-client \
@@ -18,12 +18,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Verifica instalação do Chrome
+# Verifica instalação do Chrome (já vem instalado)
 RUN google-chrome --version
 
-# Copia requirements e instala dependências Python
+# Atualiza pip e instala dependências Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt --ignore-installed selenium
 
 # Copia código da aplicação
 COPY . .
