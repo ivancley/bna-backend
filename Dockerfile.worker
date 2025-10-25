@@ -4,49 +4,59 @@ FROM ubuntu:22.04
 # Define diretório de trabalho
 WORKDIR /app
 
-# Variáveis de ambiente Python
-ENV PIP_PREFER_BINARY=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+# Evita prompts do apt
+ENV DEBIAN_FRONTEND=noninteractive
+
+# --- 1) Sistema e ferramentas necessárias ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash ca-certificates curl wget unzip gnupg \
+    netcat-openbsd \
+    # libs p/ Chrome
+    libasound2 libatk1.0-0 libcairo2 libcups2 libfontconfig1 \
+    libgdk-pixbuf2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libxss1 \
+    fonts-liberation xdg-utils \
+    # toolchain (se algum pacote Python cair para build)
+    build-essential g++ gfortran \
+    # Python 3 + pip
+    python3 python3-pip python3-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- 2) Preferir wheels e atualizar pip ---
+ENV PIP_PREFER_BINARY=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Instalar dependências básicas do sistema
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential g++ gfortran \
-    && rm -rf /var/lib/apt/lists/*
-
-# Instalar Google Chrome
+# --- 3) Instalar Google Chrome (canal estável) ---
 RUN wget -q -O /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get update && apt-get install -y /tmp/google-chrome.deb \
-    && rm /tmp/google-chrome.deb \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Instalar ChromeDriver (compatível com a versão do Chrome instalada)
-RUN CHROME_MAJOR=$(google-chrome --version | sed -E 's/.* ([0-9]+)\..*/\1/') \
-    && echo "Chrome major: $CHROME_MAJOR" \
-    && CDVER=$(curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR}) \
-    && wget -q -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CDVER}/chromedriver_linux64.zip" \
-    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
-    && chmod +x /usr/local/bin/chromedriver \
-    && rm /tmp/chromedriver.zip
+ && apt-get update && apt-get install -y /tmp/google-chrome.deb \
+ && rm /tmp/google-chrome.deb \
+ && rm -rf /var/lib/apt/lists/*
 
 # Verifica instalação do Chrome
 RUN google-chrome --version
 
-# Atualiza pip e instala dependências Python
+# --- 4) Instalar ChromeDriver compatível com a major do Chrome ---
+RUN CHROME_MAJOR=$(google-chrome --version | sed -E 's/.* ([0-9]+)\..*/\1/') \
+ && echo "Chrome major: $CHROME_MAJOR" \
+ && CDVER=$(curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR}) \
+ && wget -q -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CDVER}/chromedriver_linux64.zip" \
+ && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
+ && chmod +x /usr/local/bin/chromedriver \
+ && rm /tmp/chromedriver.zip
+
+# --- 5) Dependências Python do projeto ---
 COPY requirements.txt .
 
+# Corrige pin inexistente do numpy (2.3.4 não existe)
 RUN sed -i 's/^numpy==2\.3\.4$/numpy==2.2.6/' requirements.txt
 
-
+# Instala requirements preferindo wheels
 RUN python3 -m pip install --upgrade pip setuptools wheel \
  && pip3 install --only-binary=:all: --no-cache-dir -r requirements.txt
 
-# Copia código da aplicação
+# --- 6) Código da aplicação ---
 COPY . .
 
-# Cria entrypoint do worker diretamente no Dockerfile
+# --- 7) Entrypoint do worker ---
 RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'set -e' >> /entrypoint-worker.sh && \
     echo 'echo "🧹 Limpando processos Chrome órfãos..."' >> /entrypoint-worker.sh && \
@@ -54,35 +64,25 @@ RUN echo '#!/bin/bash' > /entrypoint-worker.sh && \
     echo 'pkill -9 -f chromedriver 2>/dev/null || true' >> /entrypoint-worker.sh && \
     echo 'rm -rf /tmp/chrome* /tmp/selenium* 2>/dev/null || true' >> /entrypoint-worker.sh && \
     echo 'echo "🔄 Aguardando PostgreSQL estar pronto..."' >> /entrypoint-worker.sh && \
-    echo 'until nc -z postgres 5432; do' >> /entrypoint-worker.sh && \
-    echo '  echo "⏳ PostgreSQL ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
-    echo '  sleep 2' >> /entrypoint-worker.sh && \
-    echo 'done' >> /entrypoint-worker.sh && \
+    echo 'until nc -z postgres 5432; do echo "⏳ Aguardando PostgreSQL..."; sleep 2; done' >> /entrypoint-worker.sh && \
     echo 'echo "✅ PostgreSQL está pronto!"' >> /entrypoint-worker.sh && \
     echo 'echo "🔄 Aguardando Redis estar pronto..."' >> /entrypoint-worker.sh && \
-    echo 'until nc -z redis 6379; do' >> /entrypoint-worker.sh && \
-    echo '  echo "⏳ Redis ainda não está pronto - aguardando..."' >> /entrypoint-worker.sh && \
-    echo '  sleep 2' >> /entrypoint-worker.sh && \
-    echo 'done' >> /entrypoint-worker.sh && \
+    echo 'until nc -z redis 6379; do echo "⏳ Aguardando Redis..."; sleep 2; done' >> /entrypoint-worker.sh && \
     echo 'echo "✅ Redis está pronto!"' >> /entrypoint-worker.sh && \
     echo 'echo "🚀 Iniciando Celery Worker (Queue: scraping)..."' >> /entrypoint-worker.sh && \
     echo 'exec "$@"' >> /entrypoint-worker.sh && \
     chmod +x /entrypoint-worker.sh
 
-# Cria usuário não-root para segurança
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app
-
-# CORREÇÃO: Criar diretórios com permissões corretas para Selenium
-RUN mkdir -p /tmp/chrome && chmod 1777 /tmp/chrome
-RUN mkdir -p /tmp/selenium_cache && chmod 755 /tmp/selenium_cache
-RUN mkdir -p /home/appuser/.cache && chmod 755 /home/appuser/.cache
-RUN chown -R appuser:appuser /tmp/chrome /tmp/selenium_cache /home/appuser/.cache
+# --- 8) Usuário não-root ---
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+ && mkdir -p /tmp/chrome /tmp/selenium_cache /home/appuser/.cache \
+ && chmod 1777 /tmp/chrome \
+ && chmod 755 /tmp/selenium_cache /home/appuser/.cache \
+ && chown -R appuser:appuser /app /tmp/chrome /tmp/selenium_cache /home/appuser/.cache
 
 USER appuser
 
-# Usa entrypoint para aguardar serviços
 ENTRYPOINT ["/entrypoint-worker.sh"]
 
-# Comando padrão: inicia Celery worker apenas para queue scraping
+# Remova o ']' extra aqui
 CMD ["celery", "-A", "api.utils.celery_app", "worker", "--loglevel=info", "-Q", "scraping", "--concurrency=1", "--pool=prefork"]
