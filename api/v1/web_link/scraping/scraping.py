@@ -93,11 +93,19 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     # UA randômico
     chrome_options.add_argument(f"--user-agent={_get_random_user_agent()}")
 
-    # SOLUÇÃO RADICAL: NÃO usar --user-data-dir
-    # Em vez disso, usar apenas cache temporário
+    # SOLUÇÃO DEFINITIVA: Criar diretório único para cada instância
     import tempfile
-    cache_dir = tempfile.mkdtemp(prefix="chrome_cache_")
+    import uuid
+    
+    # Cria diretórios únicos para cada instância do Chrome
+    unique_id = str(uuid.uuid4())[:8]
+    user_data_dir = tempfile.mkdtemp(prefix=f"chrome_user_data_{unique_id}_")
+    cache_dir = tempfile.mkdtemp(prefix=f"chrome_cache_{unique_id}_")
+    
+    # Usa diretórios únicos para evitar conflitos
+    chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
     chrome_options.add_argument(f"--disk-cache-dir={cache_dir}")
+    chrome_options.add_argument(f"--homedir={user_data_dir}")
     
     # Configurações para evitar conflitos de sessão
     chrome_options.add_argument("--disable-session-crashed-bubble")
@@ -109,8 +117,10 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     chrome_options.add_argument("--allow-running-insecure-content")
     chrome_options.add_argument("--disable-features=VizDisplayCompositor")
 
-    # Evita disputa de porta
-    chrome_options.add_argument("--remote-debugging-pipe")
+    # Evita disputa de porta - usa porta aleatória
+    import random
+    debug_port = random.randint(9222, 9999)
+    chrome_options.add_argument(f"--remote-debugging-port={debug_port}")
 
     driver = webdriver.Chrome(options=chrome_options)
     driver.set_page_load_timeout(30)
@@ -121,19 +131,20 @@ def _create_chrome_driver_headless() -> tuple[webdriver.Chrome, str, str]:
     except Exception:
         pass
 
-    return driver, None, cache_dir
+    return driver, user_data_dir, cache_dir
 
 def _cleanup_temp_dirs(*paths: str, retries: int = 5, delay: float = 0.5):
     import shutil, time, subprocess
     
     for p in paths:
-        if not p:
+        if not p or not os.path.exists(p):
             continue
             
         # Remove locks específicos do Chrome
         lock_files = [
             "SingletonLock", "SingletonCookie", "SingletonSocket",
-            "lockfile", "LOCK", "chrome_debug.log"
+            "lockfile", "LOCK", "chrome_debug.log", "Default/Lock File",
+            "Default/SingletonLock", "Default/SingletonCookie", "Default/SingletonSocket"
         ]
         
         for lock in lock_files:
@@ -144,6 +155,13 @@ def _cleanup_temp_dirs(*paths: str, retries: int = 5, delay: float = 0.5):
             except Exception:
                 pass
         
+        # Força remoção de arquivos específicos do Chrome que podem estar bloqueados
+        try:
+            subprocess.run(["find", p, "-name", "*.lock", "-delete"], check=False, timeout=5)
+            subprocess.run(["find", p, "-name", "Singleton*", "-delete"], check=False, timeout=5)
+        except Exception:
+            pass
+        
         # Tenta remover o diretório com múltiplas tentativas
         for attempt in range(retries):
             try:
@@ -153,6 +171,11 @@ def _cleanup_temp_dirs(*paths: str, retries: int = 5, delay: float = 0.5):
             except Exception as e:
                 if attempt < retries - 1:
                     time.sleep(delay)
+                    # Tenta matar processos que possam estar usando o diretório
+                    try:
+                        subprocess.run(["lsof", "+D", p], check=False, timeout=3)
+                    except Exception:
+                        pass
                 else:
                     # Última tentativa: força remoção
                     try:
@@ -295,9 +318,9 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
     last_exception = None
 
     for attempt in range(max_retries + 1):
-        driver, cache_dir = None, None
+        driver, user_data_dir, cache_dir = None, None, None
         try:
-            driver, _, cache_dir = _create_chrome_driver_headless()
+            driver, user_data_dir, cache_dir = _create_chrome_driver_headless()
             html, timed_out = _poll_until_ready_or_timeout(driver, url, max_seconds=timeout, poll_interval=0.25)
 
             if len(html) > len(best_html):
@@ -315,7 +338,7 @@ def url_to_json(url: str, timeout: float = 30.0, max_retries: int = 1) -> PageCo
                     driver.quit()
                 except Exception:
                     pass
-            _cleanup_temp_dirs(cache_dir)
+            _cleanup_temp_dirs(user_data_dir, cache_dir)
 
     if not best_html:
         # Se nada foi obtido, propaga última exceção ou gera erro claro
